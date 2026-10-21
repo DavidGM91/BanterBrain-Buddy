@@ -57,7 +57,13 @@ namespace BanterBrain_Buddy
             }
 
             var voice = await api.VoicesEndpoint.GetVoiceAsync(voiceId);
-            VoiceSettings voiceSettings = new(similarity / 100f, stability / 100f, false, style / 100f);
+            VoiceSettings voiceSettings = new()
+            {
+                SimilarityBoost = similarity / 100f,
+                Stability = stability / 100f,
+                SpeakerBoost = false,
+                Style = style / 100f
+            };
             // var voiceSettings = await api.VoicesEndpoint.GetDefaultVoiceSettingsAsync();
             var editVoice = api.VoicesEndpoint.EditVoiceSettingsAsync(voiceId, voiceSettings);
             if (editVoice.Result)

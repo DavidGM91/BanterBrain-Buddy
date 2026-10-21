@@ -207,6 +207,61 @@ namespace BanterBrain_Buddy
             }
         }
 
+        //The Twitch application Client ID is stored in settings.json (separate from usersettings.json)
+        //because TwitchAPIESub reads it from there. These helpers read/write just that key while
+        //preserving any other keys already present in the file.
+        private static string TwitchSettingsJsonPath =>
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "\\BanterBrain\\settings.json";
+
+        [SupportedOSPlatform("windows10.0.10240")]
+        private string ReadTwitchClientId()
+        {
+            try
+            {
+                if (File.Exists(TwitchSettingsJsonPath))
+                {
+                    var data = JsonConvert.DeserializeObject<Dictionary<string, string>>(File.ReadAllText(TwitchSettingsJsonPath));
+                    if (data != null && data.TryGetValue("TwitchAuthClientId", out string clientId)
+                        && !string.IsNullOrWhiteSpace(clientId) && !clientId.Contains("insert clientid"))
+                    {
+                        return clientId;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("ReadTwitchClientId failed: " + ex.Message);
+            }
+            return "";
+        }
+
+        [SupportedOSPlatform("windows10.0.10240")]
+        private void WriteTwitchClientId(string clientId)
+        {
+            try
+            {
+                string folder = Path.GetDirectoryName(TwitchSettingsJsonPath);
+                if (!Directory.Exists(folder))
+                    Directory.CreateDirectory(folder);
+
+                Dictionary<string, string> data = null;
+                if (File.Exists(TwitchSettingsJsonPath))
+                {
+                    try { data = JsonConvert.DeserializeObject<Dictionary<string, string>>(File.ReadAllText(TwitchSettingsJsonPath)); }
+                    catch { data = null; }
+                }
+                data ??= new Dictionary<string, string>();
+                data["TwitchAuthClientId"] = clientId;
+
+                File.WriteAllText(TwitchSettingsJsonPath, JsonConvert.SerializeObject(data, Formatting.Indented));
+                _bBBlog.Info("Saved TwitchAuthClientId to settings.json");
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("WriteTwitchClientId failed: " + ex.Message);
+            }
+        }
+
         [SupportedOSPlatform("windows10.0.10240")]
         private void LoadSettings()
         {
@@ -240,6 +295,8 @@ namespace BanterBrain_Buddy
             OllamaURITextBox.Text = UserSettingsManager.Settings.OllamaURI;
             UseOllamaLLMCheckBox.Checked = UserSettingsManager.Settings.UseOllamaLLMCheckBox;
             TwitchAuthServerConfig.SelectedIndex = TwitchAuthServerConfig.FindStringExact(UserSettingsManager.Settings.TwitchAuthServerConfig);
+            //Twitch App Client ID is stored in settings.json, load it into the textbox
+            TwitchClientIdTextBox.Text = ReadTwitchClientId();
 
             WebsourceServerEnable.Checked = UserSettingsManager.Settings.WebsourceServerEnable;
             //if empty set default
@@ -296,6 +353,9 @@ namespace BanterBrain_Buddy
             //these can be empty
             UserSettingsManager.Settings.TwitchBotName = TwitchBotName.Text;
             UserSettingsManager.Settings.TwitchBotAuthKey = TwitchBotAuthKey.Text;
+            //persist the Twitch App Client ID to settings.json if one was entered
+            if (TwitchClientIdTextBox.Text.Length > 0)
+                WriteTwitchClientId(TwitchClientIdTextBox.Text);
             //these cannot be empty
             if (TwitchBroadcasterAccessToken.Text.Length > 0)
                 UserSettingsManager.Settings.TwitchAccessToken = TwitchBroadcasterAccessToken.Text;

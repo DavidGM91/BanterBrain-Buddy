@@ -50,6 +50,10 @@
             TwitchBotAuthKey = new System.Windows.Forms.TextBox();
             TwitchBotNameLabel = new System.Windows.Forms.Label();
             TwitchBotAccessTokenLabel = new System.Windows.Forms.Label();
+            TwitchClientIdLabel = new System.Windows.Forms.Label();
+            TwitchClientIdTextBox = new System.Windows.Forms.TextBox();
+            TwitchClientIdGroupBox = new System.Windows.Forms.GroupBox();
+            TwitchKeyInfoLabel = new System.Windows.Forms.Label();
             groupBox2 = new System.Windows.Forms.GroupBox();
             TwitchAuthorizeButton = new System.Windows.Forms.Button();
             TwitchBroadcasterChannel = new System.Windows.Forms.TextBox();
@@ -261,6 +265,8 @@
             TwitchPanel.Controls.Add(EventSubGroupbox);
             TwitchPanel.Controls.Add(TwitchAPITestGroupBox);
             TwitchPanel.Controls.Add(label9);
+            TwitchPanel.Controls.Add(TwitchClientIdGroupBox);
+            TwitchPanel.Controls.Add(TwitchKeyInfoLabel);
             TwitchPanel.Dock = System.Windows.Forms.DockStyle.Fill;
             TwitchPanel.Location = new System.Drawing.Point(0, 0);
             TwitchPanel.Name = "TwitchPanel";
@@ -519,6 +525,46 @@
             label9.Size = new System.Drawing.Size(86, 15);
             label9.TabIndex = 0;
             label9.Text = "Twitch Settings";
+            // 
+            // TwitchClientIdGroupBox
+            // 
+            TwitchClientIdGroupBox.Controls.Add(TwitchClientIdLabel);
+            TwitchClientIdGroupBox.Controls.Add(TwitchClientIdTextBox);
+            TwitchClientIdGroupBox.Location = new System.Drawing.Point(365, 180);
+            TwitchClientIdGroupBox.Name = "TwitchClientIdGroupBox";
+            TwitchClientIdGroupBox.Size = new System.Drawing.Size(220, 95);
+            TwitchClientIdGroupBox.TabIndex = 47;
+            TwitchClientIdGroupBox.TabStop = false;
+            TwitchClientIdGroupBox.Text = "Twitch App";
+            // 
+            // TwitchClientIdLabel
+            // 
+            TwitchClientIdLabel.AutoSize = true;
+            TwitchClientIdLabel.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            TwitchClientIdLabel.Location = new System.Drawing.Point(10, 22);
+            TwitchClientIdLabel.Name = "TwitchClientIdLabel";
+            TwitchClientIdLabel.Size = new System.Drawing.Size(122, 15);
+            TwitchClientIdLabel.TabIndex = 45;
+            TwitchClientIdLabel.Text = "Twitch App Client ID";
+            // 
+            // TwitchClientIdTextBox
+            // 
+            TwitchClientIdTextBox.Location = new System.Drawing.Point(10, 42);
+            TwitchClientIdTextBox.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            TwitchClientIdTextBox.Name = "TwitchClientIdTextBox";
+            TwitchClientIdTextBox.Size = new System.Drawing.Size(200, 23);
+            TwitchClientIdTextBox.TabIndex = 46;
+            BBBToolTip.SetToolTip(TwitchClientIdTextBox, "Client ID from your application at dev.twitch.tv");
+            // 
+            // TwitchKeyInfoLabel
+            // 
+            TwitchKeyInfoLabel.AutoSize = false;
+            TwitchKeyInfoLabel.ForeColor = System.Drawing.SystemColors.GrayText;
+            TwitchKeyInfoLabel.Location = new System.Drawing.Point(15, 460);
+            TwitchKeyInfoLabel.Name = "TwitchKeyInfoLabel";
+            TwitchKeyInfoLabel.Size = new System.Drawing.Size(568, 100);
+            TwitchKeyInfoLabel.TabIndex = 48;
+            TwitchKeyInfoLabel.Text = "Where to get these keys:\r\n1. Register an app at https://dev.twitch.tv/console/apps to obtain your Client ID.\r\n2. Paste the Client ID above and add your OAuth Redirect URL (default: http://localhost:8080).\r\n3. Use the 'Authorize to Twitch' buttons above to get the Access Tokens for the Broadcaster and Bot accounts.";
             // 
             // PersonasPanel
             // 
@@ -1743,6 +1789,10 @@
         private System.Windows.Forms.TextBox TwitchBotAuthKey;
         private System.Windows.Forms.Label TwitchBotNameLabel;
         private System.Windows.Forms.Label TwitchBotAccessTokenLabel;
+        private System.Windows.Forms.Label TwitchClientIdLabel;
+        private System.Windows.Forms.TextBox TwitchClientIdTextBox;
+        private System.Windows.Forms.GroupBox TwitchClientIdGroupBox;
+        private System.Windows.Forms.Label TwitchKeyInfoLabel;
         private System.Windows.Forms.Label label28;
         private System.Windows.Forms.TrackBar RateTrackBar;
         private System.Windows.Forms.Label label5;

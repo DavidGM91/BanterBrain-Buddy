@@ -481,9 +481,32 @@ namespace BanterBrain_Buddy
             string sourcefolder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
 
             //we always copy the settings.json file to appdata because if the Client ID changes we need to be able to overwrite it.
+            //Guard against a missing source file so the app can still start (e.g. fresh installs that only ship the template).
             string tmpFile = appdataFolder + "\\settings.json";
-            _bBBlog.Debug("Copying settings.json file to appdata");
-            File.Copy(sourcefolder + "\\settings.json", tmpFile, true);
+            if (File.Exists(sourcefolder + "\\settings.json"))
+            {
+                _bBBlog.Debug("Copying settings.json file to appdata");
+                File.Copy(sourcefolder + "\\settings.json", tmpFile, true);
+            }
+            else
+            {
+                _bBBlog.Warn("settings.json not found in install folder. Falling back to the settings.json.example template.");
+
+                //First-run fallback: seed %APPDATA%\BanterBrain\settings.json from the shipped template so the
+                //Settings UI has something to edit instead of the app crashing on startup.
+                if (!File.Exists(tmpFile) && File.Exists(sourcefolder + "\\settings.json.example"))
+                {
+                    _bBBlog.Info("Copying settings.json.example template to appdata as settings.json");
+                    File.Copy(sourcefolder + "\\settings.json.example", tmpFile);
+                }
+                else if (!File.Exists(tmpFile))
+                {
+                    //Nothing shipped and nothing in appdata yet: create a default settings.json on first run
+                    //so the app starts cleanly and the Settings UI has a file to populate the Client ID into.
+                    _bBBlog.Warn("No settings.json or settings.json.example available. Creating a default settings.json in appdata.");
+                    File.WriteAllText(tmpFile, "{\n  \"TwitchAuthClientId\": \"\"\n}\n");
+                }
+            }
 
             //check if the personas file exists, if not, create it
             tmpFile = appdataFolder + "\\personas.json";

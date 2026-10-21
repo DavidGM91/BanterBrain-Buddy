@@ -342,10 +342,24 @@ namespace BanterBrain_Buddy
                 TwitchAuthRedirect = UserSettingsManager.Settings.TwitchAuthServerConfig;
             }
 
-            using StreamReader r = new(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) + @"\settings.json");
+            //read settings.json from %APPDATA%\BanterBrain (matching SetupConfigFiles) rather than the install
+            //directory, so fresh installs that only have the appdata copy don't throw FileNotFoundException.
+            string settingsPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "\\BanterBrain\\settings.json";
+            if (!File.Exists(settingsPath))
+            {
+                _bBBlog.Warn("settings.json not found in %APPDATA%\\BanterBrain. Creating a default one.");
+                Directory.CreateDirectory(Path.GetDirectoryName(settingsPath));
+                File.WriteAllText(settingsPath, "{\n  \"TwitchAuthClientId\": \"\"\n}\n");
+            }
+
+            using StreamReader r = new(settingsPath);
             //lets read the file and parse the json safely ;)
-            //need to do error handling if file does not exist
             var JsonData = JsonConvert.DeserializeObject<Dictionary<string, string>>(r.ReadToEnd());
+            if (JsonData == null)
+            {
+                _bBBlog.Error("settings.json was empty or could not be parsed.");
+                return;
+            }
 
             bool test = JsonData.TryGetValue("TwitchAuthClientId", out string tmpVal);
             if (!test)

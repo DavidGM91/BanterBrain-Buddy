@@ -42,7 +42,10 @@ namespace BanterBrain_Buddy
                 _bBBlog.Error("OllamaLLMGetModels failed: " + e.Message);
                 return null;
             }
-                if (!localModels.Any())
+            //ListLocalModels() can complete without throwing but return null (e.g. when the /api/tags
+            //response deserializes to a null collection). Guard before enumerating so Any() can't throw
+            //ArgumentNullException, and treat it the same as "no models" (callers all handle a null return).
+            if (localModels == null || !localModels.Any())
             {
                 _bBBlog.Error("No local models found");
                 return null;
