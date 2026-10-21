@@ -60,6 +60,9 @@ namespace BanterBrain_Buddy
         public event ESubChannelPointRedemptionEventHandler OnESubChannelPointRedemption;
 
         public string TwitchAccessToken { get; private set; }
+        //Display name of the account that was just authorized via the implicit flow, so the UI can
+        //auto-fill the matching "Account Name" field alongside the access token.
+        public string TwitchAuthorizedUserName { get; private set; }
         private bool TwitchAuthRequestResult { get; set; }
 
         private static string TwitchAuthRedirect { get; set; }
@@ -100,6 +103,7 @@ namespace BanterBrain_Buddy
         public TwitchAPIESub()
         {
             TwitchAccessToken = "";
+            TwitchAuthorizedUserName = "";
             TwitchAuthRequestResult = false;
             TwitchReadSettings();
             TwitchDoAutomatedCheck = true;
@@ -598,6 +602,18 @@ namespace BanterBrain_Buddy
         [System.Runtime.Versioning.SupportedOSPlatform("windows10.0.10240")]
         private async Task ReqTwitchAuthToken(List<string> scopes)
         {
+            //Guard against a missing or still-templated Client ID. Launching the browser with an invalid
+            //client_id throws a Win32Exception on the background thread below, which would crash the whole
+            //program, so bail out gracefully with a clear message instead.
+            if (string.IsNullOrWhiteSpace(TwitchAuthClientId) || TwitchAuthClientId.Contains("insert clientid"))
+            {
+                _bBBlog.Error("Twitch Client ID is not configured. Enter a valid Client ID in Settings before authorizing.");
+                MessageBox.Show("The Twitch App Client ID is not set (or still the template placeholder).\r\n\r\nOpen Settings and enter a valid Client ID from https://dev.twitch.tv/console/apps, then try again.",
+                    "Twitch Client ID required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                TwitchAuthRequestResult = false;
+                return;
+            }
+
             // create twitch api instance
             _gTwitchAPI.Settings.ClientId = TwitchAuthClientId;
 
@@ -605,7 +621,19 @@ namespace BanterBrain_Buddy
             var server = new TwitchAuthWebserver(TwitchAuthRedirect);
 
             //implicit flow is rather simple compared to client cred
-            var tImplicit = new Thread(() => Process.Start(new ProcessStartInfo($"{GetOAUTHCodeUrl(TwitchAuthClientId, TwitchAuthRedirect, scopes, "Implicit")}") { UseShellExecute = true }));
+            //wrap Process.Start so a failure to launch the browser can't crash the process from this thread
+            string oauthUrl = GetOAUTHCodeUrl(TwitchAuthClientId, TwitchAuthRedirect, scopes, "Implicit");
+            var tImplicit = new Thread(() =>
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo(oauthUrl) { UseShellExecute = true });
+                }
+                catch (Exception ex)
+                {
+                    _bBBlog.Error("Failed to launch browser for Twitch authorization: " + ex.Message);
+                }
+            });
             tImplicit.Start();
 
             var authImplicit = await server.ImplicitListen();
@@ -619,13 +647,24 @@ namespace BanterBrain_Buddy
                 //also save this the global to return
                 TwitchAccessToken = authImplicit.Code;
 
-                // get the auth'd user to test the access token's validity
-                var user = (await _gTwitchAPI.Helix.Users.GetUsersAsync()).Users[0];
-
-                // print out all the data we've got
-                _bBBlog.Info($"Authorization success! User: {user.DisplayName} (id: {user.Id})");
+                // get the auth'd user to test the access token's validity and to grab the account name
+                var users = (await _gTwitchAPI.Helix.Users.GetUsersAsync()).Users;
                 server.Stop();
-                MessageBox.Show($"Authorization success! User: {user.DisplayName}. Remember to log out if you want to authorize the other account also.");
+                if (users != null && users.Length > 0)
+                {
+                    var user = users[0];
+                    //also return this so the Settings UI can fill the "Account Name" box
+                    TwitchAuthorizedUserName = user.DisplayName;
+
+                    // print out all the data we've got
+                    _bBBlog.Info($"Authorization success! User: {user.DisplayName} (id: {user.Id})");
+                    MessageBox.Show($"Authorization success! User: {user.DisplayName}. Remember to log out if you want to authorize the other account also.");
+                }
+                else
+                {
+                    _bBBlog.Error("Authorization succeeded but no user was returned for the token.");
+                    MessageBox.Show("Authorization succeeded and the token was captured, but the account name could not be retrieved.\r\n\r\nPlease enter the Account Name manually.", "Twitch Authorization", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
             }
             else
             {
@@ -638,7 +677,8 @@ namespace BanterBrain_Buddy
         {
             string scopesStr = String.Join("+", scopes);
             string responseType;
-            redirectUri += "/redirect/";
+            //The redirect URI is sent exactly as configured (no extra path appended) so it matches the
+            //OAuth Redirect URL users register in the Twitch console verbatim.
 
             if (string.Equals(OAUTHType, "auth", StringComparison.OrdinalIgnoreCase))
                 responseType = "code";

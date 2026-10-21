@@ -53,7 +53,9 @@
             TwitchClientIdLabel = new System.Windows.Forms.Label();
             TwitchClientIdTextBox = new System.Windows.Forms.TextBox();
             TwitchClientIdGroupBox = new System.Windows.Forms.GroupBox();
-            TwitchKeyInfoLabel = new System.Windows.Forms.Label();
+            TwitchKeyInfoLabel = new System.Windows.Forms.LinkLabel();
+            SaveClientIdButton = new System.Windows.Forms.Button();
+            TwitchAuthInfoLabel = new System.Windows.Forms.Label();
             groupBox2 = new System.Windows.Forms.GroupBox();
             TwitchAuthorizeButton = new System.Windows.Forms.Button();
             TwitchBroadcasterChannel = new System.Windows.Forms.TextBox();
@@ -267,6 +269,7 @@
             TwitchPanel.Controls.Add(label9);
             TwitchPanel.Controls.Add(TwitchClientIdGroupBox);
             TwitchPanel.Controls.Add(TwitchKeyInfoLabel);
+            TwitchPanel.Controls.Add(TwitchAuthInfoLabel);
             TwitchPanel.Dock = System.Windows.Forms.DockStyle.Fill;
             TwitchPanel.Location = new System.Drawing.Point(0, 0);
             TwitchPanel.Name = "TwitchPanel";
@@ -530,9 +533,10 @@
             // 
             TwitchClientIdGroupBox.Controls.Add(TwitchClientIdLabel);
             TwitchClientIdGroupBox.Controls.Add(TwitchClientIdTextBox);
+            TwitchClientIdGroupBox.Controls.Add(SaveClientIdButton);
             TwitchClientIdGroupBox.Location = new System.Drawing.Point(365, 180);
             TwitchClientIdGroupBox.Name = "TwitchClientIdGroupBox";
-            TwitchClientIdGroupBox.Size = new System.Drawing.Size(220, 95);
+            TwitchClientIdGroupBox.Size = new System.Drawing.Size(220, 130);
             TwitchClientIdGroupBox.TabIndex = 47;
             TwitchClientIdGroupBox.TabStop = false;
             TwitchClientIdGroupBox.Text = "Twitch App";
@@ -556,15 +560,37 @@
             TwitchClientIdTextBox.TabIndex = 46;
             BBBToolTip.SetToolTip(TwitchClientIdTextBox, "Client ID from your application at dev.twitch.tv");
             // 
+            // SaveClientIdButton
+            // 
+            SaveClientIdButton.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            SaveClientIdButton.Location = new System.Drawing.Point(10, 78);
+            SaveClientIdButton.Name = "SaveClientIdButton";
+            SaveClientIdButton.Size = new System.Drawing.Size(110, 27);
+            SaveClientIdButton.TabIndex = 49;
+            SaveClientIdButton.Text = "Save Client ID";
+            SaveClientIdButton.UseVisualStyleBackColor = true;
+            SaveClientIdButton.Click += SaveClientIdButton_Click;
+            // 
             // TwitchKeyInfoLabel
             // 
             TwitchKeyInfoLabel.AutoSize = false;
             TwitchKeyInfoLabel.ForeColor = System.Drawing.SystemColors.GrayText;
-            TwitchKeyInfoLabel.Location = new System.Drawing.Point(15, 460);
+            TwitchKeyInfoLabel.Location = new System.Drawing.Point(365, 315);
             TwitchKeyInfoLabel.Name = "TwitchKeyInfoLabel";
-            TwitchKeyInfoLabel.Size = new System.Drawing.Size(568, 100);
+            TwitchKeyInfoLabel.Size = new System.Drawing.Size(222, 150);
             TwitchKeyInfoLabel.TabIndex = 48;
-            TwitchKeyInfoLabel.Text = "Where to get these keys:\r\n1. Register an app at https://dev.twitch.tv/console/apps to obtain your Client ID.\r\n2. Paste the Client ID above and add your OAuth Redirect URL (default: http://localhost:8080).\r\n3. Use the 'Authorize to Twitch' buttons above to get the Access Tokens for the Broadcaster and Bot accounts.";
+            TwitchKeyInfoLabel.LinkClicked += TwitchKeyInfoLabel_LinkClicked;
+            TwitchKeyInfoLabel.Text = "How to get the Client ID:\r\n1. Sign in at https://dev.twitch.tv/console/apps and click 'Register Your Application'.\r\n2. Enter a Name, set the OAuth Redirect URL to http://localhost:8080 (it must match the Webserver Config value exactly), pick a Category, then Submit.\r\n3. Copy the app's Client ID into the box above and click 'Save Client ID'.";
+            // 
+            // TwitchAuthInfoLabel
+            // 
+            TwitchAuthInfoLabel.AutoSize = false;
+            TwitchAuthInfoLabel.ForeColor = System.Drawing.SystemColors.GrayText;
+            TwitchAuthInfoLabel.Location = new System.Drawing.Point(15, 448);
+            TwitchAuthInfoLabel.Name = "TwitchAuthInfoLabel";
+            TwitchAuthInfoLabel.Size = new System.Drawing.Size(344, 125);
+            TwitchAuthInfoLabel.TabIndex = 50;
+            TwitchAuthInfoLabel.Text = "How to get the Access Tokens:\r\n1. Enter and save a valid Client ID first (see the Twitch App box).\r\n2. Click 'Authorize to Twitch' under the account box; a browser opens, sign in and approve, and the Access Token is filled in automatically.\r\n3. For a bot account, log out in the browser first, then authorize it under the Bot Account box.\r\n4. Use 'Test Credentials' to verify the tokens.";
             // 
             // PersonasPanel
             // 
@@ -1028,7 +1054,7 @@
             ElevenLabsTestButton.Click += ElevenLabsTestButton_Click;
             // 
             // ElevenlabsAPIKeyTextBox
-            // 
+            //
             ElevenlabsAPIKeyTextBox.Location = new System.Drawing.Point(182, 39);
             ElevenlabsAPIKeyTextBox.Name = "ElevenlabsAPIKeyTextBox";
             ElevenlabsAPIKeyTextBox.PasswordChar = '*';
@@ -1792,7 +1818,9 @@
         private System.Windows.Forms.Label TwitchClientIdLabel;
         private System.Windows.Forms.TextBox TwitchClientIdTextBox;
         private System.Windows.Forms.GroupBox TwitchClientIdGroupBox;
-        private System.Windows.Forms.Label TwitchKeyInfoLabel;
+        private System.Windows.Forms.LinkLabel TwitchKeyInfoLabel;
+        private System.Windows.Forms.Button SaveClientIdButton;
+        private System.Windows.Forms.Label TwitchAuthInfoLabel;
         private System.Windows.Forms.Label label28;
         private System.Windows.Forms.TrackBar RateTrackBar;
         private System.Windows.Forms.Label label5;

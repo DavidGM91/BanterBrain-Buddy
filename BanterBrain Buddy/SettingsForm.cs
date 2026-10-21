@@ -44,6 +44,7 @@ namespace BanterBrain_Buddy
         public SettingsForm()
         {
             InitializeComponent();
+            SetupTwitchKeyInfoLinks();
             DisablePersonaEventHandlers();
             GetAudioDevices();
             GetInstalledNativeSpeecRecognitionCultures();
@@ -259,6 +260,64 @@ namespace BanterBrain_Buddy
             catch (Exception ex)
             {
                 _bBBlog.Error("WriteTwitchClientId failed: " + ex.Message);
+            }
+        }
+
+        //Persist the Client ID typed in the Settings UI to settings.json immediately, so the user does
+        //not have to close the window for the value to be written.
+        [SupportedOSPlatform("windows10.0.10240")]
+        private void SaveClientIdButton_Click(object sender, EventArgs e)
+        {
+            string clientId = TwitchClientIdTextBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(clientId) || clientId.Contains("insert clientid"))
+            {
+                _bBBlog.Warn("Save Client ID clicked with an empty or placeholder value.");
+                MessageBox.Show("Please enter a valid Twitch App Client ID before saving.\r\n\r\nYou can get one from https://dev.twitch.tv/console/apps",
+                    "Twitch Client ID required", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            try
+            {
+                WriteTwitchClientId(clientId);
+                MessageBox.Show("Twitch Client ID saved to settings.json.", "Saved",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("SaveClientIdButton_Click failed: " + ex.Message);
+                MessageBox.Show("Failed to save the Twitch Client ID: " + ex.Message, "Save Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private const string TwitchDevPortalUrl = "https://dev.twitch.tv/console/apps";
+
+        //The instructions label is a LinkLabel; register the developer portal URL as an actual clickable
+        //link spanning its occurrence in the text (WinForms LinkLabel does not auto-detect URLs).
+        [SupportedOSPlatform("windows10.0.10240")]
+        private void SetupTwitchKeyInfoLinks()
+        {
+            int idx = TwitchKeyInfoLabel.Text.IndexOf(TwitchDevPortalUrl, StringComparison.Ordinal);
+            if (idx >= 0)
+            {
+                TwitchKeyInfoLabel.Links.Clear();
+                TwitchKeyInfoLabel.Links.Add(idx, TwitchDevPortalUrl.Length, TwitchDevPortalUrl);
+            }
+        }
+
+        [SupportedOSPlatform("windows10.0.10240")]
+        private void TwitchKeyInfoLabel_LinkClicked(object sender, LinkLabelLinkClickedEventArgs e)
+        {
+            try
+            {
+                if (e.Link?.LinkData is string url && !string.IsNullOrWhiteSpace(url))
+                {
+                    Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+                }
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("Failed to open Twitch key info link: " + ex.Message);
             }
         }
 
@@ -1115,20 +1174,31 @@ namespace BanterBrain_Buddy
             //channel.channel_points_automatic_reward_redemption.add (channel:read:redemptions) to get automatic reward redemptions by MyTwitchNotableViewers
             //channel.channel_points_custom_reward_redemption.add (channel:read:redemptions) to get custom reward redemptions by MyTwitchNotableViewers
 
-            var twitchAPIResult = await twitchAPI.GetTwitchAuthToken([
-                    //API scope to send text to chat
-                    "user:write:chat", 
-                //EventSub scopes for subscription types to read chat, get subscription events, read when people cheer (bits) and follower events
-                "user:read:chat", "channel:read:subscriptions", "bits:read", "moderator:read:followers", "channel:read:redemptions"]);
+            try
+            {
+                var twitchAPIResult = await twitchAPI.GetTwitchAuthToken([
+                        //API scope to send text to chat
+                        "user:write:chat", 
+                    //EventSub scopes for subscription types to read chat, get subscription events, read when people cheer (bits) and follower events
+                    "user:read:chat", "channel:read:subscriptions", "bits:read", "moderator:read:followers", "channel:read:redemptions"]);
 
-            if (!twitchAPIResult)
-            {
-                _bBBlog.Error("Issue with getting auth token. Check logs for more information.");
-                MessageBox.Show($"Issue with getting Auth token. Check logs for more information.", "Twitch Authorization Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (!twitchAPIResult)
+                {
+                    _bBBlog.Error("Issue with getting auth token. Check logs for more information.");
+                    MessageBox.Show($"Issue with getting Auth token. Check logs for more information.", "Twitch Authorization Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                else
+                {
+                    TwitchBroadcasterAccessToken.Text = twitchAPI.TwitchAccessToken;
+                    //auto-fill the broadcaster account name that was just authorized
+                    if (!string.IsNullOrWhiteSpace(twitchAPI.TwitchAuthorizedUserName))
+                        TwitchBroadcasterChannel.Text = twitchAPI.TwitchAuthorizedUserName;
+                }
             }
-            else
+            catch (Exception ex)
             {
-                TwitchBroadcasterAccessToken.Text = twitchAPI.TwitchAccessToken;
+                _bBBlog.Error("Twitch Broadcaster authorization failed: " + ex.Message);
+                MessageBox.Show("Twitch authorization failed: " + ex.Message, "Twitch Authorization Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -2174,20 +2244,31 @@ namespace BanterBrain_Buddy
             //channel.channel_points_automatic_reward_redemption.add (channel:read:redemptions) to get automatic reward redemptions by MyTwitchNotableViewers
             //channel.channel_points_custom_reward_redemption.add (channel:read:redemptions) to get custom reward redemptions by MyTwitchNotableViewers
 
-            var twitchAPIResult = await twitchAPI.GetTwitchAuthToken([
-                    //API scope to send text to chat
-                    "user:write:chat"
-                //EventSub scopes for subscription types to read chat, get subscription events, read when people cheer (bits) and follower events
-                ]);
+            try
+            {
+                var twitchAPIResult = await twitchAPI.GetTwitchAuthToken([
+                        //API scope to send text to chat
+                        "user:write:chat"
+                    //EventSub scopes for subscription types to read chat, get subscription events, read when people cheer (bits) and follower events
+                    ]);
 
-            if (!twitchAPIResult)
-            {
-                _bBBlog.Error("Issue with getting auth token. Check logs for more information.");
-                MessageBox.Show($"Issue with getting Auth token. Check logs for more information.", "Twitch Authorization Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (!twitchAPIResult)
+                {
+                    _bBBlog.Error("Issue with getting auth token. Check logs for more information.");
+                    MessageBox.Show($"Issue with getting Auth token. Check logs for more information.", "Twitch Authorization Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                else
+                {
+                    TwitchBotAuthKey.Text = twitchAPI.TwitchAccessToken;
+                    //auto-fill the bot account name that was just authorized
+                    if (!string.IsNullOrWhiteSpace(twitchAPI.TwitchAuthorizedUserName))
+                        TwitchBotName.Text = twitchAPI.TwitchAuthorizedUserName;
+                }
             }
-            else
+            catch (Exception ex)
             {
-                TwitchBotAuthKey.Text = twitchAPI.TwitchAccessToken;
+                _bBBlog.Error("Twitch Bot authorization failed: " + ex.Message);
+                MessageBox.Show("Twitch authorization failed: " + ex.Message, "Twitch Authorization Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
