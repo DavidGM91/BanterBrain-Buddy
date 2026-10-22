@@ -3,7 +3,6 @@ using ElevenLabs.User;
 using ElevenLabs.Voices;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
-using OpenAI_API.Moderation;
 using System;
 using System.Collections.Generic;
 using System.IO;

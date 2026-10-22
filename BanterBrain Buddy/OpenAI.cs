@@ -1,12 +1,14 @@
 ﻿using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
-using OpenAI_API;
-using OpenAI_API.Models;
+using OpenAI;
+using OpenAI.Audio;
+using OpenAI.Chat;
+using OpenAI.Models;
 using System;
+using System.ClientModel;
 using System.Collections.Generic;
-using System.Linq;
+using System.IO;
 using System.Runtime.Versioning;
-using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -19,19 +21,19 @@ namespace BanterBrain_Buddy
     /// </summary>
     /// 
 
-    public class AIModelExtended : Model { 
-        public static Model GPT4_Omni => new ("gpt-4o") { OwnedBy = "openai" }; 
-        public static Model GPT4_O_Mini => new ("gpt-4o-mini") { OwnedBy = "openai" }; 
-    }
-
     internal class OpenAI
     {
 
         private static readonly log4net.ILog _bBBlog = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
+        // how many chat history messages we keep and send along for context
+        private const int maxChatHistoryMessages = 40;
+        // model that is used when the user setting is empty or a legacy/retired value
+        private const string defaultChatModel = "gpt-5-mini";
+
         private int SelectedOutputDevice;
-        private OpenAIAPI _OpenAPI;
-        private OpenAI_API.Chat.Conversation _Chat;
+        private OpenAIClient _OpenAPI;
+        private readonly List<ChatMessage> _chatHistory = new();
         public string OpenAIAPIKey { get; set; }
 
         private SettingsManager UserSettingsManager = SettingsManager.Instance;
@@ -47,6 +49,26 @@ namespace BanterBrain_Buddy
                     _bBBlog.Debug($"Selected outputdevice = {tmpOut}");
                     SelectedOutputDevice = i;
                 }
+            }
+        }
+
+        // Validates an API key by listing the models it gives access to.
+        // This is a free (non token consuming) authenticated call, used by the UI to test keys.
+        public static async Task<bool> ValidateApiKeyAsync(string apiKey)
+        {
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                return false;
+            }
+            try
+            {
+                OpenAIModelClient modelClient = new(apiKey);
+                await modelClient.GetModelsAsync();
+                return true;
+            }
+            catch (ClientResultException)
+            {
+                return false;
             }
         }
 
@@ -68,8 +90,8 @@ namespace BanterBrain_Buddy
                 // Function to validate the API key with a timeout
                 async Task<bool> ValidateAPIKeyWithTimeout()
                 {
-                    var validateTask = _OpenAPI.Auth.ValidateAPIKey();
-                    var timeoutTask = Task.Delay(TimeSpan.FromSeconds(15)); // 10 seconds timeout
+                    var validateTask = _OpenAPI.GetOpenAIModelClient().GetModelsAsync();
+                    var timeoutTask = Task.Delay(TimeSpan.FromSeconds(15)); // 15 seconds timeout
 
                     var completedTask = await Task.WhenAny(validateTask, timeoutTask);
                     if (completedTask == timeoutTask)
@@ -78,7 +100,16 @@ namespace BanterBrain_Buddy
                         return false;
                     }
 
-                    return await validateTask;
+                    try
+                    {
+                        await validateTask;
+                        return true;
+                    }
+                    catch (ClientResultException ex)
+                    {
+                        _bBBlog.Error("OpenAI API Key rejected by server: " + ex.Status + " " + ex.Message);
+                        return false;
+                    }
                 }
 
                 // First attempt
@@ -152,16 +183,29 @@ namespace BanterBrain_Buddy
             if (_OpenAPI == null)
             { 
             _OpenAPI = new(UserSettingsManager.Settings.GPTAPIKey);
-            OpenAIAPIKey = _OpenAPI.Auth.ApiKey;
+            OpenAIAPIKey = UserSettingsManager.Settings.GPTAPIKey;
             }
-            var STTResult = await _OpenAPI.Transcriptions.GetTextAsync(audioFile, ISOLanguage);
-
-            if (STTResult == null)
+            AudioClient whisperClient = _OpenAPI.GetAudioClient("whisper-1");
+            AudioTranscriptionOptions transcriptionOptions = new()
             {
-                _bBBlog.Error("OpenAI STT failed");
+                Language = ISOLanguage
+            };
+            try
+            {
+                ClientResult<AudioTranscription> STTResult = await whisperClient.TranscribeAudioAsync(audioFile, transcriptionOptions);
+
+                if (STTResult?.Value?.Text == null)
+                {
+                    _bBBlog.Error("OpenAI STT failed");
+                    return null;
+                }
+                return STTResult.Value.Text;
+            }
+            catch (ClientResultException ex)
+            {
+                _bBBlog.Error("OpenAI STT failed: " + ex.Status + " " + ex.Message);
                 return null;
             }
-            return STTResult;
         }
 
         //convert the speed range from 0.25 to 4.0 using the -100 to 100 slider
@@ -192,19 +236,36 @@ namespace BanterBrain_Buddy
             if (_OpenAPI == null)
             {
                 _OpenAPI = new(UserSettingsManager.Settings.GPTAPIKey);
-                OpenAIAPIKey = _OpenAPI.Auth.ApiKey;
+                OpenAIAPIKey = UserSettingsManager.Settings.GPTAPIKey;
             }
                 //alloy, echo, fable, onyx, nova, and shimmer
-            _OpenAPI.TextToSpeech.DefaultTTSRequestArgs.Voice = voice;
-            //speed 0.25 to 4.0
-
-            _OpenAPI.TextToSpeech.DefaultTTSRequestArgs.Speed = ConvertRange(speed);
-              //we use WAV streams format
-            _OpenAPI.TextToSpeech.DefaultTTSRequestArgs.ResponseFormat = "wav";
-            var TTSResult = await _OpenAPI.TextToSpeech.GetSpeechAsStreamAsync(text);
-            if (TTSResult == null)
+            AudioClient ttsClient = _OpenAPI.GetAudioClient("tts-1");
+            SpeechGenerationOptions ttsRequestArgs = new()
             {
-                _bBBlog.Error("OpenAI TTS failed");
+                //speed 0.25 to 4.0
+                SpeedRatio = (float)ConvertRange(speed),
+                //we use WAV streams format
+                ResponseFormat = GeneratedSpeechFormat.Wav,
+            };
+            byte[] wavBytes;
+            try
+            {
+                ClientResult<BinaryData> TTSResult = await ttsClient.GenerateSpeechAsync(text, new GeneratedSpeechVoice(voice), ttsRequestArgs);
+                if (TTSResult?.Value == null)
+                {
+                    _bBBlog.Error("OpenAI TTS failed");
+                    return false;
+                }
+                wavBytes = TTSResult.Value.ToArray();
+            }
+            catch (ClientResultException ex)
+            {
+                _bBBlog.Error("OpenAI TTS failed: " + ex.Status + " " + ex.Message);
+                return false;
+            }
+            if (wavBytes.Length == 0)
+            {
+                _bBBlog.Error("OpenAI TTS returned empty audio");
                 return false;
             }
             // Ensure volumeControl is within the expected range
@@ -220,12 +281,8 @@ namespace BanterBrain_Buddy
             {
                 DeviceNumber = SelectedOutputDevice
             };
-            //it has to be 24000, 16, 1 for some reason?
-            var waveStream = new RawSourceWaveStream(TTSResult, new WaveFormat(24000, 16, 1))
-            {
-                //reset the stream to the beginning or you wont hear anything
-                Position = 0
-            };
+            //the response is a full WAV file, so we can read it with a WaveFileReader
+            var waveStream = new WaveFileReader(new MemoryStream(wavBytes));
             // Create a SampleChannel for volume control
             var sampleChannel = new SampleChannel(waveStream, false);
 
@@ -242,7 +299,37 @@ namespace BanterBrain_Buddy
             {
                 await Task.Delay(500);
             }
+            waveOut.Dispose();
             return true;
+        }
+
+        // maps legacy/retired model names from older settings.json files to current models
+        private string NormalizeGPTModel(string model)
+        {
+            switch (model)
+            {
+                case "gpt-3.5-turbo": // retired, use the current low cost model instead
+                    _bBBlog.Info("Legacy GPT-3.5 Turbo setting detected, using " + defaultChatModel);
+                    return defaultChatModel;
+                case "gpt-4-omni":
+                    _bBBlog.Info("Legacy gpt-4-omni setting detected, using gpt-4o");
+                    return "gpt-4o";
+                case "gpt-4-omni-mini":
+                    _bBBlog.Info("Legacy gpt-4-omni-mini setting detected, using gpt-4o-mini");
+                    return "gpt-4o-mini";
+                case null or "":
+                    _bBBlog.Info("No GPT Model set, using " + defaultChatModel);
+                    return defaultChatModel;
+                default:
+                    return model;
+            }
+        }
+
+        // reasoning models manage a hidden thinking budget, for these we must not send a
+        // temperature or an output cap the way we do for the classic models
+        private static bool IsReasoningModel(string model)
+        {
+            return model.StartsWith("gpt-5") || model.StartsWith("o1") || model.StartsWith("o3") || model.StartsWith("o4");
         }
 
         [SupportedOSPlatform("windows10.0.10240")]
@@ -253,41 +340,72 @@ namespace BanterBrain_Buddy
 
             _OpenAPI ??= new(UserSettingsManager.Settings.GPTAPIKey);
 
-            _Chat ??= _OpenAPI.Chat.CreateConversation();
-           // _Chat.RequestParameters.Model = AIModelExtended.GPT4_Omni;
-            switch (UserSettingsManager.Settings.GPTModel)
+            string model = NormalizeGPTModel(UserSettingsManager.Settings.GPTModel);
+            _bBBlog.Info("GPT Model: " + model);
+            ChatClient chatClient = _OpenAPI.GetChatClient(model);
+
+            bool reasoningModel = IsReasoningModel(model);
+            ChatCompletionOptions requestOptions = new();
+            // reasoning models (gpt-5 and newer) reject a non default temperature and
+            // manage their own output budget, so only apply these to the classic models
+            if (!reasoningModel)
             {
-                case "gpt-3.5-turbo":
-                    _Chat.Model = Model.ChatGPTTurbo;
-                    break;
-                case "gpt-4-omni":
-                    _Chat.Model = AIModelExtended.GPT4_Omni;
-                    break;
-                case "gpt-4-omni-mini":
-                    _Chat.Model = AIModelExtended.GPT4_O_Mini;
-                    break;
-                default:
-                    _Chat.Model = Model.ChatGPTTurbo;
-                    _bBBlog.Info("Switch default GPT-3.5 Turbo selected");
-                    break;
+                requestOptions.Temperature = UserSettingsManager.Settings.GPTTemperature;
+                requestOptions.MaxOutputTokenCount = UserSettingsManager.Settings.GPTMaxTokens;
             }
-            //_Chat.Model = Model.ChatGPTTurbo;
-            _bBBlog.Info("GPT Model: " + _Chat.Model);
-            _Chat.RequestParameters.Temperature = UserSettingsManager.Settings.GPTTemperature;
-            _Chat.RequestParameters.MaxTokens = UserSettingsManager.Settings.GPTMaxTokens;
+            else if (UserSettingsManager.Settings.GPTNoReasoningCheckBox)
+            {
+                //the user asked for short answers: keep the model but drop it to the lowest reasoning
+                //effort, otherwise the answer can be cut off before the model gets to say anything
+#pragma warning disable OPENAI001 // the SDK still flags the reasoning effort level as experimental
+                requestOptions.ReasoningEffortLevel = ChatReasoningEffortLevel.Minimal;
+#pragma warning restore OPENAI001
+                _bBBlog.Info("GPT reasoning disabled, using minimal reasoning effort");
+            }
             //mood is setting the system text description
             //this is the persona role
             _bBBlog.Info("SystemRole: " + tmpPersonaRoletext);
-            _Chat.AppendSystemMessage(tmpPersonaRoletext);
+            List<ChatMessage> messages = new()
+            {
+                new SystemChatMessage(tmpPersonaRoletext)
+            };
+            messages.AddRange(_chatHistory);
+            messages.Add(new UserChatMessage(UserInput));
 
-            _Chat.AppendUserInput(UserInput);
             try
             {
                 _bBBlog.Info("ChatGPT response: ");
-                await _Chat.StreamResponseFromChatbotAsync(res =>
+                AsyncCollectionResult<StreamingChatCompletionUpdate> completionUpdates = chatClient.CompleteChatStreamingAsync(messages, requestOptions);
+                ChatFinishReason? finishReason = null;
+                await foreach (StreamingChatCompletionUpdate completionUpdate in completionUpdates)
                 {
-                    gPTOutputText += res;
-                });
+                    foreach (ChatMessageContentPart contentPart in completionUpdate.ContentUpdate)
+                    {
+                        gPTOutputText += contentPart.Text;
+                    }
+                    //the last update tells us why the model stopped generating
+                    if (completionUpdate.FinishReason != null)
+                        finishReason = completionUpdate.FinishReason;
+                }
+                if (finishReason == ChatFinishReason.Length)
+                {
+                    //output was cut off by the token limit, this is the usual cause of half sentences
+                    _bBBlog.Warn("GPT answer hit the output token limit (finish_reason: length). Raise Max Tokens in Settings.");
+                }
+                if (string.IsNullOrWhiteSpace(gPTOutputText))
+                {
+                    //an empty answer is an error, returning "" here left the bot saying nothing and
+                    //crashing the chat post on an empty Twitch message body
+                    _bBBlog.Error($"GPT returned no answer content (finish_reason: {finishReason}). The model probably spent its whole budget on reasoning. Enable 'No reasoning' in Settings or raise Max Tokens.");
+                    return null;
+                }
+                //keep the conversation for context, the way the old Conversation object did
+                _chatHistory.Add(new UserChatMessage(UserInput));
+                _chatHistory.Add(new AssistantChatMessage(gPTOutputText));
+                while (_chatHistory.Count > maxChatHistoryMessages)
+                {
+                    _chatHistory.RemoveAt(0);
+                }
                 _bBBlog.Info(gPTOutputText);
                 _bBBlog.Info("GPT Response done");
                 return gPTOutputText;
@@ -298,15 +416,21 @@ namespace BanterBrain_Buddy
                 _bBBlog.Error("GPT API Auth error: " + ex.Message);
                 return null;
             }
+            catch (ClientResultException ex)
+            {
+                MessageBox.Show(ex.Message, "GPT API error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                _bBBlog.Error("GPT API error: " + ex.Status + " " + ex.Message);
+                return null;
+            }
 
         }
 
         public void ChatGPTChatReset()
         {
-            if (_Chat != null)
+            if (_chatHistory.Count > 0)
             {
                 _bBBlog.Info("ChatGPTChatReset called, forcefully resetting the history");
-                _Chat = _OpenAPI.Chat.CreateConversation();
+                _chatHistory.Clear();
             } else
             {
                 _bBBlog.Debug("ChatGPTChatReset failed, chat was not initialized anyway");

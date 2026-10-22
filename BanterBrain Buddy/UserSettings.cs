@@ -45,6 +45,9 @@ namespace BanterBrain_Buddy
         public string TwitchCustomRewardName { get; set; }
         public int GPTMaxTokens { get; set; }
         public float GPTTemperature { get; set; }
+        //reasoning models (gpt-5 and newer) burn their budget on hidden reasoning tokens before
+        //answering, this asks the model for the minimum reasoning effort instead
+        public bool GPTNoReasoningCheckBox { get; set; }
         public string TTSNativeVoiceSelected { get; set; }
         public string STTSelectedProvider { get; set; }
         public string MainSelectedPersona { get; set; }
@@ -60,6 +63,12 @@ namespace BanterBrain_Buddy
         public string OllamaSelectedModel { get; set; }
         public bool UseOllamaLLMCheckBox { get; set; }
         public string OllamaResponseLengthComboBox { get; set; }
+        //let a reasoning model think before it answers. Off by default: reasoning eats the whole
+        //context window of small local models and leaves an empty answer behind. The settings UI
+        //shows this inverted as a "Disable reasoning" checkbox, same as the OpenAI one.
+        public bool OllamaThinkingCheckBox { get; set; }
+        //num_ctx in tokens, 0 keeps the Ollama server default
+        public int OllamaContextTokens { get; set; }
         public string TwitchChatSound { get; set; }
         public bool TwitchChatSoundCheckBox { get; set; }
         public bool TwitchChannelSoundCheckBox { get; set; }
@@ -173,9 +182,10 @@ namespace BanterBrain_Buddy
                 settings.AzureLanguageComboBox = "en-US";
 
                 //OpenAI ChatGPT
-                settings.GPTModel = "gpt-3.5-turbo";
+                settings.GPTModel = "gpt-5-mini";
                 settings.GPTMaxTokens = 100;
                 settings.GPTTemperature = 0;
+                settings.GPTNoReasoningCheckBox = false;
 
                 //OpenAI Whisper
                 settings.WhisperSpeechRecognitionComboBox = "English";
@@ -186,6 +196,8 @@ namespace BanterBrain_Buddy
                 //ollama
                 settings.OllamaURI = "https://localhost:11434";
                 settings.OllamaResponseLengthComboBox = "Normal";
+                settings.OllamaThinkingCheckBox = false;
+                settings.OllamaContextTokens = 0;
 
                 //Webserversource
                 settings.WebsourceServer = "http://localhost:9138";

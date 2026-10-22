@@ -517,8 +517,20 @@ namespace BanterBrain_Buddy
                 {
                     _bBBlog.Error("Rate limit exceeded: " + exception.Message);
                     await Task.Delay(10000);
-                    await _gTwitchAPI.Helix.Chat.SendChatMessage(TwitchChannelID, TwitchChatUserID, part, null, TwitchChatAccessToken);
+                    try
+                    {
+                        await _gTwitchAPI.Helix.Chat.SendChatMessage(TwitchChannelID, TwitchChatUserID, part, null, TwitchChatAccessToken);
+                    }
+                    catch (Exception retryException)
+                    {
+                        _bBBlog.Error($"Retry after rate limit failed: {retryException.Message}");
+                    }
                     await Task.Delay(delay);
+                }
+                catch (Exception exception)
+                {
+                    //a failing part must not abort the whole post, and must not crash the calling handler
+                    _bBBlog.Error($"Could not send message part: {exception.Message}");
                 }
             }
         }
@@ -539,6 +551,20 @@ namespace BanterBrain_Buddy
             _bBBlog.Info($"Trying to send message: {messageToSend} to channel");
             //we need to send the message to the channel, so we need the channel id and the user id
             //we also need the access token
+            //TwitchLib throws a BadParameterException ("message must be set") on an empty body, which happens
+            //when the LLM call failed and left the output text empty, so bail out before we hit the API.
+            if (string.IsNullOrWhiteSpace(messageToSend))
+            {
+                _bBBlog.Error("Message is empty, nothing to send to channel");
+                return false;
+            }
+            //Twitch does not accept leading/trailing whitespace in a chat message
+            messageToSend = messageToSend.Trim();
+            if (messageToSend.Length == 0)
+            {
+                _bBBlog.Error("Message only contained whitespace, nothing to send to channel");
+                return false;
+            }
             if (TwitchAccessToken == null)
             {
                 _bBBlog.Error("No access token set, cannot send message");
@@ -554,6 +580,16 @@ namespace BanterBrain_Buddy
                 _bBBlog.Error("No user ID set, cannot send message");
                 return false;
             }
+            else if (TwitchChatUserID == null)
+            {
+                _bBBlog.Error("No chat user ID set, cannot send message");
+                return false;
+            }
+            else if (TwitchChatAccessToken == null)
+            {
+                _bBBlog.Error("No chat access token set, cannot send message");
+                return false;
+            }
             _bBBlog.Info($"Sending to channel {TwitchChannelID} from user {TwitchChatUserID}. Message: {messageToSend}");
 
             //if this message is longer than 255 characters we need to split it up
@@ -565,9 +601,10 @@ namespace BanterBrain_Buddy
                     await SendMessageWithDelay(messageToSend, 1000);
                     return true;
                 }
-                catch (TwitchLib.Api.Core.Exceptions.BadRequestException exception)
+                catch (Exception exception)
                 {
-                    _bBBlog.Error("Bad request exception: " + exception.Message);
+                    //never let a chat post bring down the bot, this runs from an async void event handler
+                    _bBBlog.Error($"Could not send split message to channel: {exception.Message}");
                     return false;
                 }
             }
@@ -580,17 +617,26 @@ namespace BanterBrain_Buddy
                     await _gTwitchAPI.Helix.Chat.SendChatMessage(TwitchChannelID, TwitchChatUserID, messageToSend, null, TwitchChatAccessToken);
                     return true;
                 }
-                catch (TwitchLib.Api.Core.Exceptions.BadRequestException exception)
-                {
-                    _bBBlog.Error("Bad request exception: " + exception.Message);
-                    return false;
-                }
                 catch (TwitchLib.Api.Core.Exceptions.TooManyRequestsException exception)
                 {
                     _bBBlog.Error("Rate limit exceeded: " + exception.Message);
                     await Task.Delay(2000);
-                    await _gTwitchAPI.Helix.Chat.SendChatMessage(TwitchChannelID, TwitchChatUserID, messageToSend, null, TwitchChatAccessToken);
-                    return true;
+                    try
+                    {
+                        await _gTwitchAPI.Helix.Chat.SendChatMessage(TwitchChannelID, TwitchChatUserID, messageToSend, null, TwitchChatAccessToken);
+                        return true;
+                    }
+                    catch (Exception retryException)
+                    {
+                        _bBBlog.Error($"Retry after rate limit failed: {retryException.Message}");
+                        return false;
+                    }
+                }
+                catch (Exception exception)
+                {
+                    //Bad request/Bad parameter/Token problems all end up here, log and keep the bot running
+                    _bBBlog.Error($"Could not send message to channel: {exception.Message}");
+                    return false;
                 }
             }
         }
@@ -965,7 +1011,7 @@ namespace BanterBrain_Buddy
 
             _bBBlog.Debug($"Subscriber websocket {_eventSubWebsocketClient.SessionId}");
             var eventData = e.Notification.Payload.Event;
-            var tierSub = int.Parse(eventData.Tier) / 1000;
+            var tierSub = int.TryParse(eventData.Tier, out var parsedTier) ? parsedTier / 1000 : 1;
             _bBBlog.Info($"{eventData.UserName} gifted {eventData.Total} tier {tierSub} subscription(s) to a total of {eventData.CumulativeTotal}");
             if (OnESubSubscriptionGift == null)
             {

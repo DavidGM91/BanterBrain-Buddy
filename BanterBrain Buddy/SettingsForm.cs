@@ -1,6 +1,5 @@
 ﻿using NAudio.CoreAudioApi;
 using Newtonsoft.Json;
-using OpenAI_API;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -39,6 +38,23 @@ namespace BanterBrain_Buddy
         private int previousPersonaSelectedIndex;
 
         private SettingsManager UserSettingsManager = SettingsManager.Instance;
+
+        //safe parses for textbox values, the test-voice path runs from an async void click handler so a bad value must never throw
+        private static int ParseIntOrDefault(string value, int defaultValue)
+        {
+            if (int.TryParse(value, out var result))
+                return result;
+            _bBBlog.Warn($"Could not parse \"{value}\" to an int, using default {defaultValue}");
+            return defaultValue;
+        }
+
+        private static float ParseFloatOrDefault(string value, float defaultValue)
+        {
+            if (float.TryParse(value, out var result))
+                return result;
+            _bBBlog.Warn($"Could not parse \"{value}\" to a float, using default {defaultValue}");
+            return defaultValue;
+        }
 
         [SupportedOSPlatform("windows10.0.10240")]
         public SettingsForm()
@@ -340,6 +356,12 @@ namespace BanterBrain_Buddy
             AzureRegionTextBox.Text = UserSettingsManager.Settings.AzureRegionTextBox;
             AzureLanguageComboBox.Text = UserSettingsManager.Settings.AzureLanguageComboBox;
             GPTModelComboBox.SelectedIndex = GPTModelComboBox.FindStringExact(UserSettingsManager.Settings.GPTModel);
+            //older settings files may still contain a legacy model name that is no longer in the list
+            if (GPTModelComboBox.SelectedIndex < 0)
+            {
+                _bBBlog.Info("Saved GPT model not found in list, selecting default");
+                GPTModelComboBox.SelectedIndex = 0;
+            }
             GPTAPIKeyTextBox.Text = UserSettingsManager.Settings.GPTAPIKey;
             GPTMaxTokensTextBox.Text = UserSettingsManager.Settings.GPTMaxTokens.ToString();
             if (GPTMaxTokensTextBox.Text.Length < 1)
@@ -353,6 +375,11 @@ namespace BanterBrain_Buddy
             OllamaResponseLengthComboBox.SelectedIndex = OllamaResponseLengthComboBox.FindStringExact(UserSettingsManager.Settings.OllamaResponseLengthComboBox);
             OllamaURITextBox.Text = UserSettingsManager.Settings.OllamaURI;
             UseOllamaLLMCheckBox.Checked = UserSettingsManager.Settings.UseOllamaLLMCheckBox;
+            //stored as "thinking on/off" like the OpenAI checkbox this is shown inverted as "disable reasoning"
+            OllamaNoReasoningCheckBox.Checked = !UserSettingsManager.Settings.OllamaThinkingCheckBox;
+            //older settings files have no value for this, 0 means "use the Ollama server default"
+            OllamaContextTokensTextBox.Text = (UserSettingsManager.Settings.OllamaContextTokens > 0 ? UserSettingsManager.Settings.OllamaContextTokens : 0).ToString();
+            GPTNoReasoningCheckBox.Checked = UserSettingsManager.Settings.GPTNoReasoningCheckBox;
             TwitchAuthServerConfig.SelectedIndex = TwitchAuthServerConfig.FindStringExact(UserSettingsManager.Settings.TwitchAuthServerConfig);
             //Twitch App Client ID is stored in settings.json, load it into the textbox
             TwitchClientIdTextBox.Text = ReadTwitchClientId();
@@ -438,9 +465,9 @@ namespace BanterBrain_Buddy
             if (GPTAPIKeyTextBox.Text.Length > 0)
                 UserSettingsManager.Settings.GPTAPIKey = GPTAPIKeyTextBox.Text;
             if (GPTMaxTokensTextBox.Text.Length > 0)
-                UserSettingsManager.Settings.GPTMaxTokens = int.Parse(GPTMaxTokensTextBox.Text);
+                UserSettingsManager.Settings.GPTMaxTokens = ParseIntOrDefault(GPTMaxTokensTextBox.Text, UserSettingsManager.Settings.GPTMaxTokens);
             if (GPTTemperatureTextBox.Text.Length > 0)
-                UserSettingsManager.Settings.GPTTemperature = float.Parse(GPTTemperatureTextBox.Text);
+                UserSettingsManager.Settings.GPTTemperature = ParseFloatOrDefault(GPTTemperatureTextBox.Text, UserSettingsManager.Settings.GPTTemperature);
             if (ElevenlabsAPIKeyTextBox.Text.Length > 0)
                 UserSettingsManager.Settings.ElevenLabsAPIkey = ElevenlabsAPIKeyTextBox.Text;
             if (OllamaModelsComboBox.Text.Length > 0)
@@ -449,6 +476,8 @@ namespace BanterBrain_Buddy
                 UserSettingsManager.Settings.OllamaResponseLengthComboBox = OllamaResponseLengthComboBox.Text;
             if (OllamaURITextBox.Text.Length > 0)
                 UserSettingsManager.Settings.OllamaURI = OllamaURITextBox.Text;
+            if (OllamaContextTokensTextBox.Text.Length > 0)
+                UserSettingsManager.Settings.OllamaContextTokens = ParseIntOrDefault(OllamaContextTokensTextBox.Text, UserSettingsManager.Settings.OllamaContextTokens);
             if (NativeSpeechRecognitionLanguageComboBox.Text.Length > 1)
                 UserSettingsManager.Settings.NativeSpeechRecognitionLanguageComboBox = NativeSpeechRecognitionLanguageComboBox.Text;
             if (WhisperSpeechRecognitionComboBox.Text.Length > 1)
@@ -458,6 +487,8 @@ namespace BanterBrain_Buddy
             if (WebsourceServer.Text.Length > 1)
                 UserSettingsManager.Settings.WebsourceServer = WebsourceServer.Text;
             UserSettingsManager.Settings.UseOllamaLLMCheckBox = UseOllamaLLMCheckBox.Checked;
+            UserSettingsManager.Settings.OllamaThinkingCheckBox = !OllamaNoReasoningCheckBox.Checked;
+            UserSettingsManager.Settings.GPTNoReasoningCheckBox = GPTNoReasoningCheckBox.Checked;
             UserSettingsManager.Settings.WebsourceServerEnable = WebsourceServerEnable.Checked;
             UserSettingsManager.Settings.ElevenLabsModel = ElevenLabsModelComboBox.Text;
             UserSettingsManager.SaveSettings();
@@ -682,7 +713,7 @@ namespace BanterBrain_Buddy
                 PersonaComboBox.Items.Clear();
                 using var sr = new StreamReader(tmpFile);
                 var tmpString = sr.ReadToEnd();
-                var tmpPersonas = JsonConvert.DeserializeObject<List<Personas>>(tmpString);
+                var tmpPersonas = JsonConvert.DeserializeObject<List<Personas>>(tmpString) ?? new List<Personas>();
                 foreach (var persona in tmpPersonas)
                 {
                     _bBBlog.Debug("Loading persona into available list: " + persona.Name);
@@ -754,9 +785,9 @@ namespace BanterBrain_Buddy
                     _bBBlog.Debug($"Persona {persona.Name} already exists, updating it");
                     persona.RoleText = PersonaRoleTextBox.Text;
                     persona.VoiceProvider = TTSProviderComboBox.Text;
-                    persona.Rate = int.Parse(TTSSpeedLevel.Text);
-                    persona.Volume = int.Parse(TTSVoiceLevel.Text);
-                    persona.Pitch = int.Parse(TTSPitchLevel.Text);
+                    persona.Rate = ParseIntOrDefault(TTSSpeedLevel.Text, persona.Rate);
+                    persona.Volume = ParseIntOrDefault(TTSVoiceLevel.Text, persona.Volume);
+                    persona.Pitch = ParseIntOrDefault(TTSPitchLevel.Text, persona.Pitch);
 
                     //we need to add the voiceID for the ElevenLabs API
                     if (TTSProviderComboBox.Text == "ElevenLabs")
@@ -984,8 +1015,8 @@ namespace BanterBrain_Buddy
             AzureSpeechAPI azureSpeechAPI = new(AzureAPIKeyTextBox.Text, AzureRegionTextBox.Text, AzureLanguageComboBox.Text);
 
             //set the output voice, gender and locale, and the style
-            _bBBlog.Info("Setting up Azure TTS: " + int.Parse(TTSVoiceLevel.Text));
-            await azureSpeechAPI.AzureTTSInit(TTSOutputVoice.Text, TTSOutputVoiceOption1.Text, TTSOutputVoice.Text, int.Parse(TTSVoiceLevel.Text), int.Parse(TTSSpeedLevel.Text), int.Parse(TTSPitchLevel.Text));
+            _bBBlog.Info("Setting up Azure TTS: " + ParseIntOrDefault(TTSVoiceLevel.Text, 0));
+            await azureSpeechAPI.AzureTTSInit(TTSOutputVoice.Text, TTSOutputVoiceOption1.Text, TTSOutputVoice.Text, ParseIntOrDefault(TTSVoiceLevel.Text, 0), ParseIntOrDefault(TTSSpeedLevel.Text, 0), ParseIntOrDefault(TTSPitchLevel.Text, 0));
 
             var result = await azureSpeechAPI.AzureSpeak(TextToSpeak);
             if (!result)
@@ -1095,7 +1126,7 @@ namespace BanterBrain_Buddy
         private async Task TTSOpenAIWhisperSpeakToOutput(string TextToSay)
         {
             OpenAI openAI = new();
-            var result = await openAI.OpenAITTS(TextToSay, TTSAudioOutputComboBox.Text, TTSOutputVoice.Text, int.Parse(TTSSpeedLevel.Text), int.Parse(TTSVoiceLevel.Text));
+            var result = await openAI.OpenAITTS(TextToSay, TTSAudioOutputComboBox.Text, TTSOutputVoice.Text, ParseIntOrDefault(TTSSpeedLevel.Text, 0), ParseIntOrDefault(TTSVoiceLevel.Text, 0));
             if (!result)
             {
                 _bBBlog.Error("OpenAI Whisper TTS error. Is there a problem with your API key or subscription?");
@@ -1121,7 +1152,7 @@ namespace BanterBrain_Buddy
 
             elevenLabsApi ??= new(ElevenlabsAPIKeyTextBox.Text);
 
-            var result = await elevenLabsApi.ElevenLabsTTS(TextToSay, TTSAudioOutputComboBox.Text, outputVoice, int.Parse(TTSOutputVoiceOption1.Text), int.Parse(TTSOutputVoiceOption2.Text), int.Parse(TTSOutputVoiceOption3.Text), int.Parse(TTSVoiceLevel.Text));
+            var result = await elevenLabsApi.ElevenLabsTTS(TextToSay, TTSAudioOutputComboBox.Text, outputVoice, ParseIntOrDefault(TTSOutputVoiceOption1.Text, 0), ParseIntOrDefault(TTSOutputVoiceOption2.Text, 0), ParseIntOrDefault(TTSOutputVoiceOption3.Text, 0), ParseIntOrDefault(TTSVoiceLevel.Text, 0));
             if (!result)
             {
                 _bBBlog.Error("ElevenLabs TTS error. Is there a problem with your API key or subscription?");
@@ -1134,15 +1165,14 @@ namespace BanterBrain_Buddy
         {
             _bBBlog.Info("Saying text with Native TTS");
             NativeSpeech nativeSpeech = new();
-            await nativeSpeech.NativeTTSInit(TTSOutputVoice.Text, TTSAudioOutputComboBox.Text, int.Parse(TTSVoiceLevel.Text), int.Parse(TTSSpeedLevel.Text), int.Parse(TTSPitchLevel.Text));
+            await nativeSpeech.NativeTTSInit(TTSOutputVoice.Text, TTSAudioOutputComboBox.Text, ParseIntOrDefault(TTSVoiceLevel.Text, 0), ParseIntOrDefault(TTSSpeedLevel.Text, 0), ParseIntOrDefault(TTSPitchLevel.Text, 0));
             await nativeSpeech.NativeSpeak(TTSText);
         }
 
         [SupportedOSPlatform("windows10.0.10240")]
         private async void GPTTestButton_Click(object sender, EventArgs e)
         {
-            OpenAIAPI api = new(GPTAPIKeyTextBox.Text);
-            if (await api.Auth.ValidateAPIKey())
+            if (await OpenAI.ValidateApiKeyAsync(GPTAPIKeyTextBox.Text))
             {
                 _bBBlog.Info("ChatGPT API key is valid");
                 MessageBox.Show("ChatGPT API key is valid", "OpenAI API Test", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -1983,6 +2013,27 @@ namespace BanterBrain_Buddy
         }
 
         [SupportedOSPlatform("windows10.0.10240")]
+        private void OllamaContextTokensTextBox_KeyPress(object sender, KeyPressEventArgs e)
+        {
+            // Check if the input is not a digit or control (like backspace)
+            if (!char.IsDigit(e.KeyChar) && !char.IsControl(e.KeyChar))
+            {
+                e.Handled = true;  // Ignore the input
+            }
+        }
+
+        [SupportedOSPlatform("windows10.0.10240")]
+        private void OllamaContextTokensTextBox_Validating(object sender, CancelEventArgs e)
+        {
+            System.Windows.Forms.TextBox currenttb = (System.Windows.Forms.TextBox)sender;
+            if (string.IsNullOrWhiteSpace(currenttb.Text))
+            {
+                MessageBox.Show("This field cannot be empty. Use 0 for the Ollama server default.");
+                e.Cancel = true;  // Cancel the event and keep the focus on the TextBox
+            }
+        }
+
+        [SupportedOSPlatform("windows10.0.10240")]
         private void PersonaComboBox_Validating(object sender, CancelEventArgs e)
         {
             System.Windows.Forms.ComboBox currenttb = (System.Windows.Forms.ComboBox)sender;
@@ -2133,8 +2184,7 @@ namespace BanterBrain_Buddy
                 if (GPTAPIKeyTextBox.Text.Length > 1)
                 {
                     //we need to see if the entered key is valid
-                    OpenAIAPI api = new(GPTAPIKeyTextBox.Text);
-                    if (!await api.Auth.ValidateAPIKey())
+                    if (!await OpenAI.ValidateApiKeyAsync(GPTAPIKeyTextBox.Text))
                     {
                         MessageBox.Show("Invalid OpenAI API key. Value cleared", "OpenAI API key error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         GPTAPIKeyTextBox.Text = "";

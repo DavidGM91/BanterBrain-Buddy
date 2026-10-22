@@ -132,6 +132,7 @@
             GPTAPIKeyTextBox = new System.Windows.Forms.TextBox();
             GPTAPIKeyLabel = new System.Windows.Forms.Label();
             label7 = new System.Windows.Forms.Label();
+            GPTNoReasoningCheckBox = new System.Windows.Forms.CheckBox();
             NativeSpeechPanel = new System.Windows.Forms.Panel();
             label22 = new System.Windows.Forms.Label();
             NativeSpeechRecognitionLanguageComboBox = new System.Windows.Forms.ComboBox();
@@ -171,6 +172,9 @@
             OllamaURITextBox = new System.Windows.Forms.TextBox();
             label19 = new System.Windows.Forms.Label();
             label15 = new System.Windows.Forms.Label();
+            OllamaNoReasoningCheckBox = new System.Windows.Forms.CheckBox();
+            OllamaContextTokensTextBox = new System.Windows.Forms.TextBox();
+            OllamaContextTokensLabel = new System.Windows.Forms.Label();
             BBBToolTip = new System.Windows.Forms.ToolTip(components);
             ((System.ComponentModel.ISupportInitialize)splitContainer1).BeginInit();
             splitContainer1.Panel1.SuspendLayout();
@@ -1081,6 +1085,7 @@
             // 
             // OpenAIChatGPTPanel
             // 
+            OpenAIChatGPTPanel.Controls.Add(GPTNoReasoningCheckBox);
             OpenAIChatGPTPanel.Controls.Add(WhisperSpeechRecognitionComboBox);
             OpenAIChatGPTPanel.Controls.Add(label23);
             OpenAIChatGPTPanel.Controls.Add(LLMMaxTokensHelpText);
@@ -1101,6 +1106,17 @@
             OpenAIChatGPTPanel.Size = new System.Drawing.Size(594, 579);
             OpenAIChatGPTPanel.TabIndex = 3;
             OpenAIChatGPTPanel.Validating += OpenAIChatGPTPanel_Validating;
+            // 
+            // GPTNoReasoningCheckBox
+            // 
+            GPTNoReasoningCheckBox.AutoSize = true;
+            GPTNoReasoningCheckBox.Location = new System.Drawing.Point(37, 215);
+            GPTNoReasoningCheckBox.Name = "GPTNoReasoningCheckBox";
+            GPTNoReasoningCheckBox.Size = new System.Drawing.Size(265, 19);
+            GPTNoReasoningCheckBox.TabIndex = 42;
+            GPTNoReasoningCheckBox.Text = "Disable reasoning (faster, shorter answers)";
+            BBBToolTip.SetToolTip(GPTNoReasoningCheckBox, "Only affects reasoning models (gpt-5 and newer). Those models spend tokens on hidden thinking before they answer, which can cut the answer off or leave it empty. This asks the model for the smallest reasoning effort.");
+            GPTNoReasoningCheckBox.UseVisualStyleBackColor = true;
             // 
             // WhisperSpeechRecognitionComboBox
             // 
@@ -1190,7 +1206,7 @@
             // 
             GPTModelComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             GPTModelComboBox.FormattingEnabled = true;
-            GPTModelComboBox.Items.AddRange(new object[] { "gpt-3.5-turbo", "gpt-4-omni", "gpt-4-omni-mini" });
+            GPTModelComboBox.Items.AddRange(new object[] { "gpt-5.1", "gpt-5-mini", "gpt-4o", "gpt-4o-mini" });
             GPTModelComboBox.Location = new System.Drawing.Point(183, 82);
             GPTModelComboBox.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
             GPTModelComboBox.Name = "GPTModelComboBox";
@@ -1555,6 +1571,9 @@
             // 
             // OllamaPanel
             // 
+            OllamaPanel.Controls.Add(OllamaNoReasoningCheckBox);
+            OllamaPanel.Controls.Add(OllamaContextTokensTextBox);
+            OllamaPanel.Controls.Add(OllamaContextTokensLabel);
             OllamaPanel.Controls.Add(UseOllamaLLMCheckBox);
             OllamaPanel.Controls.Add(OllamaResponseLengthComboBox);
             OllamaPanel.Controls.Add(label20);
@@ -1570,6 +1589,37 @@
             OllamaPanel.Size = new System.Drawing.Size(594, 579);
             OllamaPanel.TabIndex = 37;
             OllamaPanel.VisibleChanged += OllamaPanel_VisibleChanged;
+            // 
+            // OllamaContextTokensLabel
+            // 
+            OllamaContextTokensLabel.AutoSize = true;
+            OllamaContextTokensLabel.Location = new System.Drawing.Point(65, 170);
+            OllamaContextTokensLabel.Name = "OllamaContextTokensLabel";
+            OllamaContextTokensLabel.Size = new System.Drawing.Size(94, 15);
+            OllamaContextTokensLabel.TabIndex = 11;
+            OllamaContextTokensLabel.Text = "Context tokens";
+            // 
+            // OllamaContextTokensTextBox
+            // 
+            OllamaContextTokensTextBox.Location = new System.Drawing.Point(202, 166);
+            OllamaContextTokensTextBox.Name = "OllamaContextTokensTextBox";
+            OllamaContextTokensTextBox.Size = new System.Drawing.Size(205, 23);
+            OllamaContextTokensTextBox.TabIndex = 12;
+            OllamaContextTokensTextBox.Text = "0";
+            BBBToolTip.SetToolTip(OllamaContextTokensTextBox, "0 keeps the Ollama server default (often 4096). Raise it if answers get cut off mid sentence, but a bigger window needs more RAM and is slower.");
+            OllamaContextTokensTextBox.KeyPress += OllamaContextTokensTextBox_KeyPress;
+            OllamaContextTokensTextBox.Validating += OllamaContextTokensTextBox_Validating;
+            // 
+            // OllamaNoReasoningCheckBox
+            // 
+            OllamaNoReasoningCheckBox.AutoSize = true;
+            OllamaNoReasoningCheckBox.Location = new System.Drawing.Point(62, 200);
+            OllamaNoReasoningCheckBox.Name = "OllamaNoReasoningCheckBox";
+            OllamaNoReasoningCheckBox.Size = new System.Drawing.Size(320, 19);
+            OllamaNoReasoningCheckBox.TabIndex = 13;
+            OllamaNoReasoningCheckBox.Text = "Disable reasoning (faster, shorter answers)";
+            BBBToolTip.SetToolTip(OllamaNoReasoningCheckBox, "Only affects reasoning models (qwen3 and newer). Those models spend tokens on hidden thinking before they answer, which can cut the answer off or leave it empty. This makes the model answer directly without thinking.");
+            OllamaNoReasoningCheckBox.UseVisualStyleBackColor = true;
             // 
             // UseOllamaLLMCheckBox
             // 
@@ -1760,6 +1810,7 @@
         private System.Windows.Forms.Button GPTTestButton;
         private System.Windows.Forms.TextBox GPTAPIKeyTextBox;
         private System.Windows.Forms.Label GPTAPIKeyLabel;
+        private System.Windows.Forms.CheckBox GPTNoReasoningCheckBox;
         private System.Windows.Forms.GroupBox EventSubGroupbox;
         private System.Windows.Forms.CheckBox TwitchMockEventSub;
         private System.Windows.Forms.Button TwitchEventSubTestButton;
@@ -1786,6 +1837,9 @@
         private System.Windows.Forms.Button OllamaTestButton;
         private System.Windows.Forms.ComboBox OllamaResponseLengthComboBox;
         private System.Windows.Forms.Label label20;
+        private System.Windows.Forms.CheckBox OllamaNoReasoningCheckBox;
+        private System.Windows.Forms.TextBox OllamaContextTokensTextBox;
+        private System.Windows.Forms.Label OllamaContextTokensLabel;
         private System.Windows.Forms.Panel NativeSpeechPanel;
         private System.Windows.Forms.Label label22;
         private System.Windows.Forms.ComboBox NativeSpeechRecognitionLanguageComboBox;

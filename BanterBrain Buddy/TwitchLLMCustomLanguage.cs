@@ -102,15 +102,37 @@ namespace BanterBrain_Buddy
             var tmpFile = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "\\BanterBrain\\CustomTwitchLLMLanguage.json";
             if (!File.Exists(tmpFile))
             {
+                //create it from English so first use does not crash
+                _bBBlog.Debug("Twitch LLM custom language file not found, creating it from English");
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(tmpFile));
+                    var sourcefolder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                    var englishFile = sourcefolder + "\\TwitchLLMLanguageFiles\\English.json";
+                    if (File.Exists(englishFile))
+                        File.Copy(englishFile, tmpFile);
+                    else
+                        _bBBlog.Error($"English language template {englishFile} not found, Error!");
+                }
+                catch (Exception ex)
+                {
+                    _bBBlog.Error("Could not create custom Twitch LLM language file: " + ex.Message);
+                }
+            }
+
+            if (!File.Exists(tmpFile))
+            {
                 _bBBlog.Error($"Twitch LLM language {UserSettingsManager.Settings.TwitchLLMLanguageComboBox} file not found, Error!");
+                MessageBox.Show("Custom language file not found and could not be created from the English template.", "Twitch LLM Language", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                EnableEventHandlers();
+                return;
             }
 
             _bBBlog.Debug($"Twitch LLM language {UserSettingsManager.Settings.TwitchLLMLanguageComboBox} file found, loading it.");
             using var sr = new StreamReader(tmpFile);
             var tmpString = sr.ReadToEnd();
 
-            TwitchLLMLanguage ??= new();
-            TwitchLLMLanguage = JsonConvert.DeserializeObject<TwitchLLMResponseLanguage>(tmpString);
+            TwitchLLMLanguage = JsonConvert.DeserializeObject<TwitchLLMResponseLanguage>(tmpString) ?? new();
 
             LoadClassIntoText();
 
@@ -211,6 +233,7 @@ namespace BanterBrain_Buddy
                 //save the class back to the custom language file
                 var tmpFile = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "\\BanterBrain\\CustomTwitchLLMLanguage.json";
                 _bBBlog.Debug($"Twitch LLM language {UserSettingsManager.Settings.TwitchLLMLanguageComboBox} file found, saving it.");
+                Directory.CreateDirectory(Path.GetDirectoryName(tmpFile));
                 using var sw = new StreamWriter(tmpFile);
                 sw.Write(JsonConvert.SerializeObject(TwitchLLMLanguage));
             }
@@ -225,13 +248,17 @@ namespace BanterBrain_Buddy
             string tmpFile;
 
             tmpFile = sourcefolder + $"\\TwitchLLMLanguageFiles\\{TwitchLLMLanguageComboBox.Text}.json";
+            if (!File.Exists(tmpFile))
+            {
+                _bBBlog.Error($"Twitch LLM language {TwitchLLMLanguageComboBox.Text} file not found at {tmpFile}, Error!");
+                MessageBox.Show($"Language file for {TwitchLLMLanguageComboBox.Text} was not found.", "Twitch LLM Language", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
             _bBBlog.Debug($"Twitch LLM language {TwitchLLMLanguageComboBox.Text} file found, loading it.");
             using var sr = new StreamReader(tmpFile);
             var tmpString = sr.ReadToEnd();
-            //if this is the first time make the new class
-            TwitchLLMLanguage ??= new();
 
-            TwitchLLMLanguage = JsonConvert.DeserializeObject<TwitchLLMResponseLanguage>(tmpString);
+            TwitchLLMLanguage = JsonConvert.DeserializeObject<TwitchLLMResponseLanguage>(tmpString) ?? new();
             _bBBlog.Info($"Twitch LLM language file loaded with language: {TwitchLLMLanguage.Language}");
             DisableEventHandlers();
             LoadClassIntoText();

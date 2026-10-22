@@ -12,7 +12,6 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Windows.Media.SpeechSynthesis;
-using static OpenAI_API.Audio.TextToSpeechRequest;
 
 /// <summary>
 /// CODING RULES:

@@ -1,6 +1,4 @@
 ﻿using Gma.System.MouseKeyHook;
-using OpenAI_API;
-using OpenAI_API.Models;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -572,6 +570,14 @@ namespace BanterBrain_Buddy
                     return persona;
                 }
             }
+            //no match (renamed/deleted persona or stale saved name): fall back to the first available instead of null
+            //so callers that dereference the result inside async void handlers do not crash
+            if (_personas.Count > 0)
+            {
+                _bBBlog.Warn($"Selected persona '{personaName}' not found, falling back to '{_personas[0].Name}'");
+                return _personas[0];
+            }
+            _bBBlog.Error($"Selected persona '{personaName}' not found and no personas are loaded");
             return null;
         }
 
@@ -626,7 +632,7 @@ namespace BanterBrain_Buddy
                 using var sr = new StreamReader(tmpFile);
                 var tmpString = sr.ReadToEnd();
                 //var tmpPersonas = JsonConvert.DeserializeObject<List<Personas>>(tmpString);
-                var tmpPersonas = JsonConvert.DeserializeObject<List<Personas>>(tmpString);
+                var tmpPersonas = JsonConvert.DeserializeObject<List<Personas>>(tmpString) ?? new List<Personas>();
                 foreach (var persona in tmpPersonas)
                 {
                     _bBBlog.Debug("Loading persona into available list: " + persona.Name);
@@ -1044,8 +1050,11 @@ namespace BanterBrain_Buddy
             if (result == null)
             {
                 _bBBlog.Error("Ollama API error. Is there a problem with your API key or subscription?");
+                UpdateTextLog("Ollama returned no answer. Check the LLM settings (thinking off, context tokens high enough?).\r\n");
                 MessageBox.Show("Ollama API error. Is there a problem with your API key or subscription?", "Ollama API error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 _bigError = true;
+                //make sure waiters on _gPTDone do not spin forever on a failed call
+                _gPTDone = true;
             }
             else
             {
@@ -1069,8 +1078,11 @@ namespace BanterBrain_Buddy
             if (result == null)
             {
                 _bBBlog.Error("GPT API error. Is there a problem with your API key or subscription?");
+                UpdateTextLog("GPT returned no answer. Check the Max Tokens setting or enable 'Disable reasoning' in Settings.\r\n");
                 MessageBox.Show("GPT API error. Is there a problem with your API key or subscription?", "GPT API error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 _bigError = true;
+                //make sure waiters on _gPTDone do not spin forever on a failed call
+                _gPTDone = true;
             }
             else
             {
@@ -1103,7 +1115,7 @@ namespace BanterBrain_Buddy
 
             //set the output voice, gender and locale, and the style
             //this now depends on the selected persona
-            await _azureSpeech.AzureTTSInit(tmpPersona.VoiceName, tmpPersona.VoiceOptions[0], UserSettingsManager.Settings.TTSAudioOutput, tmpPersona.Volume, tmpPersona.Rate, tmpPersona.Pitch);
+            await _azureSpeech.AzureTTSInit(tmpPersona.VoiceName, GetVoiceOptionOrDefault(tmpPersona.VoiceOptions, 0, "Default"), UserSettingsManager.Settings.TTSAudioOutput, tmpPersona.Volume, tmpPersona.Rate, tmpPersona.Pitch);
             if (!await _azureSpeech.AzureVerifyAPI())
             {
                 _bBBlog.Error("Azure TTS error. Is there a problem with your API key or subscription?");
@@ -1155,6 +1167,24 @@ namespace BanterBrain_Buddy
         [SupportedOSPlatform("windows10.0.10240")]
         private async Task DoSayText(string TextToSay, int DelayWhenDone, Personas tmpPersona)
         {
+            //an empty response (e.g. a failed LLM call) must not be handed to the TTS engines
+            if (string.IsNullOrWhiteSpace(TextToSay))
+            {
+                _bBBlog.Error("DoSayText called with empty text, skipping TTS");
+                UpdateTextLog("Nothing to say, skipping TTS\r\n");
+                _tTSSpeaking = false;
+                MainRecordingStart.Enabled = true;
+                return;
+            }
+            //guard against a null persona (e.g. no personas loaded) so we never dereference null in an async void handler
+            if (tmpPersona == null)
+            {
+                _bBBlog.Error("DoSayText called with no persona, skipping TTS");
+                UpdateTextLog("No persona available for TTS, skipping\r\n");
+                _tTSSpeaking = false;
+                MainRecordingStart.Enabled = true;
+                return;
+            }
             _bBBlog.Info("Saying text: " + TextToSay + " with " + tmpPersona.Name);
             //this depends on the selected TTS provider from the persona
             _tTSSpeaking = true;
@@ -1216,7 +1246,7 @@ namespace BanterBrain_Buddy
                 MainRecordingStart.Enabled = true;
                 return;
             }
-            var result = await _elevenLabsApi.ElevenLabsTTS(TextToSay, UserSettingsManager.Settings.TTSAudioOutput, tmpPersona.VoiceName, int.Parse(tmpPersona.VoiceOptions[0]), int.Parse(tmpPersona.VoiceOptions[1]), int.Parse(tmpPersona.VoiceOptions[2]), tmpPersona.Volume);
+            var result = await _elevenLabsApi.ElevenLabsTTS(TextToSay, UserSettingsManager.Settings.TTSAudioOutput, tmpPersona.VoiceName, ParseVoiceOptionOrDefault(tmpPersona.VoiceOptions, 0, 0), ParseVoiceOptionOrDefault(tmpPersona.VoiceOptions, 1, 0), ParseVoiceOptionOrDefault(tmpPersona.VoiceOptions, 2, 0), tmpPersona.Volume);
 
             if (!result)
             {
@@ -1280,6 +1310,8 @@ namespace BanterBrain_Buddy
                 _bBBlog.Error("No LLM selected");
                 LLMGroupSettingsGroupBox.Enabled = false;
                 MessageBox.Show("No LLM selected. This is bad!", "LLM error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                //without this the wait loop below never exits
+                _gPTDone = true;
             }
             //lets wait for GPT to be done
             while (!_gPTDone)
@@ -1771,8 +1803,7 @@ namespace BanterBrain_Buddy
             //lets check if the selected OpenAI API key is valid   
             if (UserSettingsManager.Settings.SelectedLLM == "ChatGPT")
             {
-                OpenAIAPI api = new(UserSettingsManager.Settings.GPTAPIKey);
-                if (await api.Auth.ValidateAPIKey())
+                if (await OpenAI.ValidateApiKeyAsync(UserSettingsManager.Settings.GPTAPIKey))
                 {
                     _bBBlog.Info("GPT API key is valid");
                     UpdateTextLog("OpenAI key is valid.\r\n");
@@ -1821,9 +1852,9 @@ namespace BanterBrain_Buddy
             _bBBlog.Debug("Saving settings");
             //alright lets make sure we assign all values to the settings class
             UserSettingsManager.Settings.TwitchCommandTrigger = TwitchCommandTrigger.Text;
-            UserSettingsManager.Settings.TwitchChatCommandDelay = int.Parse(TwitchChatCommandDelay.Text);
+            UserSettingsManager.Settings.TwitchChatCommandDelay = ParseIntOrDefault(TwitchChatCommandDelay.Text, UserSettingsManager.Settings.TwitchChatCommandDelay);
             UserSettingsManager.Settings.TwitchNeedsSubscriber = TwitchNeedsSubscriber.Checked;
-            UserSettingsManager.Settings.TwitchMinBits = int.Parse(TwitchMinBits.Text);
+            UserSettingsManager.Settings.TwitchMinBits = ParseIntOrDefault(TwitchMinBits.Text, UserSettingsManager.Settings.TwitchMinBits);
             UserSettingsManager.Settings.TwitchSubscribed = TwitchSubscribed.Checked;
             UserSettingsManager.Settings.TwitchGiftedSub = TwitchGiftedSub.Checked;
             UserSettingsManager.Settings.TwitchEnable = TwitchEnableCheckbox.Checked;
@@ -2050,7 +2081,7 @@ namespace BanterBrain_Buddy
                 if (TwitchCheerCheckBox.Checked)
                 {
                     _bBBlog.Info("Twitch cheers enabled, calling EventSubHandleCheer with the min amount of bits needed to trigger");
-                    _twitchEventSub.EventSubHandleCheer(int.Parse(TwitchMinBits.Text));
+                    _twitchEventSub.EventSubHandleCheer(ParseIntOrDefault(TwitchMinBits.Text, UserSettingsManager.Settings.TwitchMinBits));
                     _twitchEventSub.OnESubCheerMessage += TwitchEventSub_OnESubCheerMessage;
                 }
 
@@ -2233,7 +2264,7 @@ namespace BanterBrain_Buddy
                 if (TwitchResponseToChatCheckBox.Checked)
                 {
                     //first lets wait the delay set in the textbox
-                    await Task.Delay(int.Parse(TwitchResponseToChatDelayTextBox.Text) * 1000);
+                    await Task.Delay(ParseIntOrDefault(TwitchResponseToChatDelayTextBox.Text, 1) * 1000);
                     //then post the response
                     await _twitchEventSub.SendMessage(_gPTOutputText);
                 }
@@ -2301,7 +2332,7 @@ namespace BanterBrain_Buddy
                 if (TwitchResponseToChatCheckBox.Checked)
                 {
                     //first lets wait the delay set in the textbox
-                    await Task.Delay(int.Parse(TwitchResponseToChatDelayTextBox.Text) * 1000);
+                    await Task.Delay(ParseIntOrDefault(TwitchResponseToChatDelayTextBox.Text, 1) * 1000);
                     //then post the response
                     await _twitchEventSub.SendMessage(_gPTOutputText);
                 }
@@ -2329,7 +2360,7 @@ namespace BanterBrain_Buddy
                 }
                 //we always want to thank a gifted sub, so we dont need to check if the TTS is enabled
                 _bBBlog.Info("Lets say a short \"thank you\" for the gifted sub(s)");
-                if (int.Parse(amount) > 1)
+                if (ParseIntOrDefault(amount, 0) > 1)
                     await SayText(TwitchLLMLanguage.GiftedMultipleSubs.Replace("{user}", user).Replace("{amount}", amount).Replace("{tier}", tier), 0, GetSelectedPersona(UserSettingsManager.Settings.TwitchSubscriptionPersona));
                 else
                     await SayText(TwitchLLMLanguage.GiftedSingleSub.Replace("{user}", user).Replace("{amount}", amount).Replace("{tier}", tier), 0, GetSelectedPersona(UserSettingsManager.Settings.TwitchSubscriptionPersona));
@@ -2430,7 +2461,7 @@ namespace BanterBrain_Buddy
                     if (TwitchResponseToChatCheckBox.Checked)
                     {
                         //first lets wait the delay set in the textbox
-                        await Task.Delay(int.Parse(TwitchResponseToChatDelayTextBox.Text) * 1000);
+                        await Task.Delay(ParseIntOrDefault(TwitchResponseToChatDelayTextBox.Text, 1) * 1000);
                         //then post the response
                         await _twitchEventSub.SendMessage(_gPTOutputText);
                     }
@@ -2439,8 +2470,35 @@ namespace BanterBrain_Buddy
         }
 
 
-        [SupportedOSPlatform("windows10.0.10240")]
+        //safe int parse for textbox values, event handlers run off the UI thread so a bad value must never throw
+        private static int ParseIntOrDefault(string value, int defaultValue)
+        {
+            if (int.TryParse(value, out var result))
+                return result < 0 ? 0 : result;
+            _bBBlog.Warn($"Could not parse \"{value}\" to an int, using default {defaultValue}");
+            return defaultValue;
+        }
+
+        //safe read of a persona VoiceOptions entry as a string (e.g. Azure style option), the list can be empty or shorter than expected
+        private static string GetVoiceOptionOrDefault(List<string> options, int index, string defaultValue)
+        {
+            if (options != null && index >= 0 && index < options.Count && !string.IsNullOrWhiteSpace(options[index]))
+                return options[index];
+            _bBBlog.Warn($"Persona VoiceOptions missing at index {index}, using default '{defaultValue}'");
+            return defaultValue;
+        }
+
+        //safe read+parse of a persona VoiceOptions entry, the list can be empty or shorter than expected
+        private static int ParseVoiceOptionOrDefault(List<string> options, int index, int defaultValue)
+        {
+            if (options != null && index >= 0 && index < options.Count)
+                return ParseIntOrDefault(options[index], defaultValue);
+            _bBBlog.Warn($"Persona VoiceOptions missing at index {index}, using default {defaultValue}");
+            return defaultValue;
+        }
+
         //eventhandler for valid chat messages trigger
+        [SupportedOSPlatform("windows10.0.10240")]
         private async void TwitchEventSub_OnESubChatMessage(object sender, TwitchEventhandlers.OnChatEventArgs e)
         {
 
@@ -2504,14 +2562,14 @@ namespace BanterBrain_Buddy
                 if (TwitchResponseToChatCheckBox.Checked)
                 {
                     //first lets wait the delay set in the textbox
-                    await Task.Delay(int.Parse(TwitchResponseToChatDelayTextBox.Text) * 1000);
+                    await Task.Delay(ParseIntOrDefault(TwitchResponseToChatDelayTextBox.Text, 1) * 1000);
                     //then post the response
                     await _twitchEventSub.SendMessage(_gPTOutputText);
                 }
 
                 //we need to call the eventhandler again for chat messages to have its delay and continue.
                 UpdateTextLog($"Starting command cooldown for next chat messageof : {TwitchChatCommandDelay.Text} seconds\r\n");
-                await _twitchEventSub.EventSubEnableChatMessageHandlerAfterDelay(int.Parse(TwitchChatCommandDelay.Text));
+                await _twitchEventSub.EventSubEnableChatMessageHandlerAfterDelay(ParseIntOrDefault(TwitchChatCommandDelay.Text, UserSettingsManager.Settings.TwitchChatCommandDelay));
                 UpdateTextLog("Cooldown ended listening again for next chat message\r\n");
             });
 
@@ -2582,7 +2640,7 @@ namespace BanterBrain_Buddy
                 if (!_globalTwitchAPI.EventSubCheckCheer)
                 {
                     _bBBlog.Info("Twitch cheering enabled.");
-                    _twitchEventSub.EventSubHandleCheer(int.Parse(TwitchMinBits.Text));
+                    _twitchEventSub.EventSubHandleCheer(ParseIntOrDefault(TwitchMinBits.Text, UserSettingsManager.Settings.TwitchMinBits));
                     //set local eventhanlder for valid chat messages to trigger the bot
                     _twitchEventSub.OnESubCheerMessage += TwitchEventSub_OnESubCheerMessage;
                 }
@@ -3216,7 +3274,7 @@ namespace BanterBrain_Buddy
             }
             else
             {
-                UserSettingsManager.Settings.TwitchChatCommandDelay = int.Parse(currenttb.Text);
+                UserSettingsManager.Settings.TwitchChatCommandDelay = ParseIntOrDefault(currenttb.Text, UserSettingsManager.Settings.TwitchChatCommandDelay);
                 UserSettingsManager.SaveSettings();
             }
 
