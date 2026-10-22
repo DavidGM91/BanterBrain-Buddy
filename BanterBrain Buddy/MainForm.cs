@@ -85,6 +85,7 @@ namespace BanterBrain_Buddy
         private AzureSpeechAPI _azureSpeech;
         private OllamaLLM _ollamaLLM;
         private OpenAI _openAI;
+        private Groq _groqLLM;
         private readonly List<Personas> _personas = [];
         private TwitchLLMResponseLanguage TwitchLLMLanguage;
 
@@ -456,6 +457,29 @@ namespace BanterBrain_Buddy
                 catch (Exception ex)
                 {
                     _bBBlog.Error("Error checking Ollama API key: " + ex.Message);
+                }
+            }
+            //check Groq  
+            if (!string.IsNullOrEmpty(UserSettingsManager.Settings.GroqAPIKey))
+            {
+                try
+                {
+                    _groqLLM ??= new();
+                    if (await _groqLLM.GroqCheckAPIKey())
+                    {
+                        LLMResponseSelecter.Items.Add("Groq");
+                        _bBBlog.Info("Groq API setting valid, adding to list");
+                        UpdateTextLog("Groq API setting valid.\r\n");
+                    }
+                    else
+                    {
+                        _bBBlog.Error("Groq API setting invalid");
+                    }
+
+                }
+                catch (Exception ex)
+                {
+                    _bBBlog.Error("Error checking Groq API key: " + ex.Message);
                 }
             }
         }
@@ -1092,6 +1116,33 @@ namespace BanterBrain_Buddy
             }
         }
 
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async Task TalkToGroq(String UserInput, string tmpPersonaRoletext)
+        {
+            _gPTOutputText = "";
+            UpdateTextLog("Sending to Groq: " + UserInput + "\r\n");
+            _bBBlog.Info("Sending to Groq: " + UserInput);
+            _gPTDone = false;
+
+            _groqLLM ??= new();
+            var result = await _groqLLM.GetGroqResponse(UserInput, tmpPersonaRoletext);
+            if (result == null)
+            {
+                _bBBlog.Error("Groq API error. Is there a problem with your API key or subscription?");
+                UpdateTextLog("Groq returned no answer. Check the Max Tokens setting in Settings.\r\n");
+                MessageBox.Show("Groq API error. Is there a problem with your API key or subscription?", "Groq API error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                _bigError = true;
+                //make sure waiters on _gPTDone do not spin forever on a failed call
+                _gPTDone = true;
+            }
+            else
+            {
+                UpdateTextLog("Groq Response: " + result + "\r\n");
+                _gPTOutputText = result;
+                _gPTDone = true;
+            }
+        }
+
         /// <summary>
         /// Holds the list of Azure Voices and their options
         /// </summary>
@@ -1304,6 +1355,12 @@ namespace BanterBrain_Buddy
                 UpdateTextLog("Using Ollama\r\n");
                 _bBBlog.Info("Using Ollama");
                 await TalkToOllama(TextToPass, tmpPersonaRoleText);
+            }
+            else if (UserSettingsManager.Settings.SelectedLLM == "Groq")
+            {
+                UpdateTextLog("Using Groq\r\n");
+                _bBBlog.Info("Using Groq");
+                await TalkToGroq(TextToPass, tmpPersonaRoleText);
             }
             else
             {
@@ -3438,6 +3495,7 @@ namespace BanterBrain_Buddy
             //aight here we call a new conversation i.e. reset the class of the existing GPT or Ollama conversation
             _ollamaLLM?.OllamaChatReset();
             _openAI?.ChatGPTChatReset();
+            _groqLLM?.GroqChatReset();
         }
 
         [SupportedOSPlatform("windows10.0.10240")]
