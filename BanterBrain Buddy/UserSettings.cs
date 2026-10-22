@@ -46,8 +46,17 @@ namespace BanterBrain_Buddy
         public int GPTMaxTokens { get; set; }
         public float GPTTemperature { get; set; }
         //reasoning models (gpt-5 and newer) burn their budget on hidden reasoning tokens before
-        //answering, this asks the model for the minimum reasoning effort instead
+        //answering, this picks the reasoning effort sent with the request, empty means the model default
+        public string GPTReasoningEffortComboBox { get; set; }
+        //legacy: replaced by GPTReasoningEffortComboBox, kept so old settings files can still be
+        //read and migrated to "Minimal" by the settings form
         public bool GPTNoReasoningCheckBox { get; set; }
+        //the model list fetched from the OpenAI API, kept so the settings selector stays filled
+        //across restarts, the Load models button refreshes it
+        public List<string> GPTModelListCache { get; set; }
+        //the reasoning effort levels probed from the OpenAI API per model (key = model name),
+        //an empty list caches that the model has no reasoning settings, Load levels refreshes it
+        public Dictionary<string, List<string>> GPTReasoningLevelsCache { get; set; }
         public string TTSNativeVoiceSelected { get; set; }
         public string STTSelectedProvider { get; set; }
         public string MainSelectedPersona { get; set; }
@@ -69,6 +78,17 @@ namespace BanterBrain_Buddy
         public bool OllamaThinkingCheckBox { get; set; }
         //num_ctx in tokens, 0 keeps the Ollama server default
         public int OllamaContextTokens { get; set; }
+        //Groq (OpenAI compatible chat API)
+        public string GroqAPIKey { get; set; }
+        public string GroqModel { get; set; }
+        public float GroqTemperature { get; set; }
+        public int GroqMaxTokens { get; set; }
+        //reasoning effort for Groq reasoning models (qwen3, gpt-oss, ...), empty means the model default
+        public string GroqReasoningEffortComboBox { get; set; }
+        //last model list fetched from Groq, fills the settings selector across restarts
+        public List<string> GroqModelListCache { get; set; }
+        //reasoning effort levels per Groq model, an empty list caches "no reasoning settings"
+        public Dictionary<string, List<string>> GroqReasoningLevelsCache { get; set; }
         public string TwitchChatSound { get; set; }
         public bool TwitchChatSoundCheckBox { get; set; }
         public bool TwitchChannelSoundCheckBox { get; set; }
@@ -185,7 +205,10 @@ namespace BanterBrain_Buddy
                 settings.GPTModel = "gpt-5-mini";
                 settings.GPTMaxTokens = 100;
                 settings.GPTTemperature = 0;
+                settings.GPTReasoningEffortComboBox = "";
                 settings.GPTNoReasoningCheckBox = false;
+                settings.GPTModelListCache = new List<string>();
+                settings.GPTReasoningLevelsCache = new Dictionary<string, List<string>>();
 
                 //OpenAI Whisper
                 settings.WhisperSpeechRecognitionComboBox = "English";
@@ -198,6 +221,14 @@ namespace BanterBrain_Buddy
                 settings.OllamaResponseLengthComboBox = "Normal";
                 settings.OllamaThinkingCheckBox = false;
                 settings.OllamaContextTokens = 0;
+
+                //Groq
+                settings.GroqModel = "llama-3.1-8b-instant";
+                settings.GroqTemperature = 0.5f;
+                settings.GroqMaxTokens = 100;
+                settings.GroqReasoningEffortComboBox = "";
+                settings.GroqModelListCache = new List<string>();
+                settings.GroqReasoningLevelsCache = new Dictionary<string, List<string>>();
 
                 //Webserversource
                 settings.WebsourceServer = "http://localhost:9138";

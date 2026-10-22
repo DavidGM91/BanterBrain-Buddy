@@ -8,7 +8,9 @@ using System;
 using System.ClientModel;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.Versioning;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -69,6 +71,53 @@ namespace BanterBrain_Buddy
             catch (ClientResultException)
             {
                 return false;
+            }
+        }
+
+        // the model listing also contains models that can never be used for chat completions
+        // (transcription, speech, embeddings, moderation, images and the legacy text engines),
+        // these name fragments are filtered out of the settings model selector
+        private static readonly string[] nonChatModelTokens =
+        {
+            "whisper", "tts", "transcribe", "translate", "embed", "moderation",
+            "dall", "audio", "realtime", "computer-use", "text-", "davinci", "babbage", "search"
+        };
+
+        // Pulls the chat-capable model names the key has access to from the library's model
+        // listing call, used by the settings UI to fill the model selector dynamically.
+        // Returns an empty list when no key is set or the call fails, the UI then keeps its built-in list.
+        public static async Task<List<string>> FetchChatModelNamesAsync(string apiKey)
+        {
+            List<string> chatModels = new();
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                return chatModels;
+            }
+            try
+            {
+                OpenAIModelClient modelClient = new(apiKey);
+                ClientResult<OpenAIModelCollection> modelsResult = await modelClient.GetModelsAsync();
+                foreach (OpenAIModel model in modelsResult.Value)
+                {
+                    string id = model.Id;
+                    //custom deployment names like "base-model:owner:suffix" duplicate the base model
+                    if (string.IsNullOrEmpty(id) || id.Contains(':'))
+                    {
+                        continue;
+                    }
+                    if (!nonChatModelTokens.Any(token => id.Contains(token, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        chatModels.Add(id);
+                    }
+                }
+                chatModels.Sort();
+                _bBBlog.Info($"Fetched {chatModels.Count} chat models from the OpenAI model listing");
+                return chatModels;
+            }
+            catch (ClientResultException ex)
+            {
+                _bBBlog.Error("OpenAI model list fetch failed: " + ex.Status + " " + ex.Message);
+                return new List<string>();
             }
         }
 
@@ -326,10 +375,95 @@ namespace BanterBrain_Buddy
         }
 
         // reasoning models manage a hidden thinking budget, for these we must not send a
-        // temperature or an output cap the way we do for the classic models
+        // temperature or an output cap the way we do for the classic models. The model listing
+        // can return names newer than this code, so every gpt release from version 5 up and
+        // the whole o-series are treated as reasoning models instead of a fixed prefix list
         private static bool IsReasoningModel(string model)
         {
-            return model.StartsWith("gpt-5") || model.StartsWith("o1") || model.StartsWith("o3") || model.StartsWith("o4");
+            //o1, o2, o3, ... any single letter o followed by a digit
+            if (model.StartsWith("o") && model.Length > 1 && char.IsDigit(model[1]))
+            {
+                return true;
+            }
+            Match match = Regex.Match(model, @"^gpt-(\d+)");
+            return match.Success && int.Parse(match.Groups[1].Value) >= 5;
+        }
+
+        // the models endpoints do not report reasoning capabilities, so we ask the API itself:
+        // a chat completion with an intentionally invalid reasoning effort is rejected with a
+        // validation error before any token is generated, and that error lists the supported
+        // levels. Returns the levels for the model, an empty list when the model has no
+        // reasoning settings at all, or Levels=null with a reason in Error when the API gave
+        // no answer (bad key, no credits, network, ...). Note that OpenAI checks the billing
+        // quota before parameter validation, so a 429 here means the levels cannot be probed
+        public static async Task<(List<string> Levels, string Error)> FetchReasoningEffortLevelsAsync(string apiKey, string model)
+        {
+            List<string> levels = new();
+            if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(model))
+            {
+                return (null, "No API key or model selected");
+            }
+            const string probeEffort = "zzz-effort-probe";
+            try
+            {
+                ChatClient chatClient = new(model, apiKey);
+                ChatCompletionOptions probeOptions = new()
+                {
+                    //cap the output in case a model ever accepts the bogus value
+                    MaxOutputTokenCount = 1,
+#pragma warning disable OPENAI001 // the SDK still flags the reasoning effort level as experimental
+                    ReasoningEffortLevel = probeEffort,
+#pragma warning restore OPENAI001
+                };
+                await chatClient.CompleteChatAsync(new[] { new UserChatMessage("x") }, probeOptions);
+                //the API accepted the bogus effort, the supported levels cannot be read from it
+                _bBBlog.Warn("OpenAI accepted the reasoning effort probe, cannot derive supported levels");
+                return (null, "OpenAI accepted the probe request, it did not report any validation error");
+            }
+            catch (ClientResultException ex)
+            {
+                string message = ex.Message ?? "";
+                if (ex.Status == 400)
+                {
+                    //"Invalid value: 'zzz-effort-probe'. Supported values are: 'minimal', 'low', 'medium', and 'high'."
+                    int supportedIndex = message.IndexOf("Supported values", StringComparison.Ordinal);
+                    if (supportedIndex >= 0)
+                    {
+                        foreach (Match value in Regex.Matches(message.Substring(supportedIndex), @"'([A-Za-z-]+)'"))
+                        {
+                            string level = value.Groups[1].Value;
+                            if (!level.Equals(probeEffort, StringComparison.OrdinalIgnoreCase))
+                            {
+                                //show the levels title cased like the built-in selector items
+                                levels.Add(char.ToUpperInvariant(level[0]) + level.Substring(1).ToLowerInvariant());
+                            }
+                        }
+                        _bBBlog.Info($"OpenAI reported {levels.Count} reasoning levels for {model}");
+                        return (levels, null);
+                    }
+                    //"Unsupported parameter: 'reasoning_effort' is not supported with this model."
+                    if (message.Contains("reasoning", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _bBBlog.Info($"OpenAI reports {model} has no reasoning settings");
+                        return (levels, null);
+                    }
+                }
+                //any other status (401, 404, 429, ...) means we got no answer for the model,
+                //hand the API's own reason to the UI, a 429 for example means the account
+                //has no credits and the probe never reached parameter validation
+                _bBBlog.Error("Reasoning effort probe failed: " + ex.Status + " " + message);
+                string reason = $"HTTP {ex.Status}: {message}";
+                if (reason.Length > 300)
+                {
+                    reason = reason.Substring(0, 300) + "...";
+                }
+                return (null, reason);
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("Reasoning effort probe failed: " + ex.Message);
+                return (null, ex.Message);
+            }
         }
 
         [SupportedOSPlatform("windows10.0.10240")]
@@ -353,14 +487,19 @@ namespace BanterBrain_Buddy
                 requestOptions.Temperature = UserSettingsManager.Settings.GPTTemperature;
                 requestOptions.MaxOutputTokenCount = UserSettingsManager.Settings.GPTMaxTokens;
             }
-            else if (UserSettingsManager.Settings.GPTNoReasoningCheckBox)
+            else
             {
-                //the user asked for short answers: keep the model but drop it to the lowest reasoning
-                //effort, otherwise the answer can be cut off before the model gets to say anything
+                //the dropdown lets the user pick the thinking budget, an empty setting or "Auto"
+                //keeps the library default. The levels come from the model itself (see
+                //FetchReasoningEffortLevelsAsync), so send the chosen one as-is and let the API validate it
+                string reasoningEffort = UserSettingsManager.Settings.GPTReasoningEffortComboBox;
+                if (!string.IsNullOrEmpty(reasoningEffort) && !reasoningEffort.StartsWith("Auto", StringComparison.Ordinal))
+                {
 #pragma warning disable OPENAI001 // the SDK still flags the reasoning effort level as experimental
-                requestOptions.ReasoningEffortLevel = ChatReasoningEffortLevel.Minimal;
+                    requestOptions.ReasoningEffortLevel = reasoningEffort.ToLowerInvariant();
 #pragma warning restore OPENAI001
-                _bBBlog.Info("GPT reasoning disabled, using minimal reasoning effort");
+                    _bBBlog.Info("GPT reasoning effort set to: " + reasoningEffort);
+                }
             }
             //mood is setting the system text description
             //this is the persona role

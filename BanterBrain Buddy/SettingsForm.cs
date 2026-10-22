@@ -204,6 +204,9 @@ namespace BanterBrain_Buddy
                 case "OllamaLLM":
                     PanelVisible(OllamaPanel.Name);
                     break;
+                case "GroqLLM":
+                    PanelVisible(GroqPanel.Name);
+                    break;
                 case "StreamingSettings":
                     PanelVisible(TwitchPanel.Name);
                     break;
@@ -355,6 +358,15 @@ namespace BanterBrain_Buddy
             AzureAPIKeyTextBox.Text = UserSettingsManager.Settings.AzureAPIKeyTextBox;
             AzureRegionTextBox.Text = UserSettingsManager.Settings.AzureRegionTextBox;
             AzureLanguageComboBox.Text = UserSettingsManager.Settings.AzureLanguageComboBox;
+            //restore the model list from the last fetch, so the selector stays filled across restarts
+            if (UserSettingsManager.Settings.GPTModelListCache != null && UserSettingsManager.Settings.GPTModelListCache.Count > 0)
+            {
+                GPTModelComboBox.Items.Clear();
+                foreach (string cachedModel in UserSettingsManager.Settings.GPTModelListCache)
+                {
+                    GPTModelComboBox.Items.Add(cachedModel);
+                }
+            }
             GPTModelComboBox.SelectedIndex = GPTModelComboBox.FindStringExact(UserSettingsManager.Settings.GPTModel);
             //older settings files may still contain a legacy model name that is no longer in the list
             if (GPTModelComboBox.SelectedIndex < 0)
@@ -367,6 +379,42 @@ namespace BanterBrain_Buddy
             if (GPTMaxTokensTextBox.Text.Length < 1)
                 GPTMaxTokensTextBox.Text = "100";
             GPTTemperatureTextBox.Text = UserSettingsManager.Settings.GPTTemperature.ToString();
+            //Groq: older settings files have no values for these, stay null-safe and fall back to defaults
+            GroqAPIKeyTextBox.Text = UserSettingsManager.Settings.GroqAPIKey ?? "";
+            //restore the model list from the last fetch, so the selector stays filled across restarts
+            if (UserSettingsManager.Settings.GroqModelListCache != null && UserSettingsManager.Settings.GroqModelListCache.Count > 0)
+            {
+                GroqModelComboBox.Items.Clear();
+                foreach (string cachedModel in UserSettingsManager.Settings.GroqModelListCache)
+                {
+                    GroqModelComboBox.Items.Add(cachedModel);
+                }
+            }
+            if (string.IsNullOrEmpty(UserSettingsManager.Settings.GroqModel))
+            {
+                _bBBlog.Info("No Groq model set, using the built-in defaults");
+                GroqModelComboBox.SelectedIndex = 0;
+                GroqTemperatureTextBox.Text = "0.5";
+                GroqMaxTokensTextBox.Text = "100";
+            }
+            else
+            {
+                GroqModelComboBox.SelectedIndex = GroqModelComboBox.FindStringExact(UserSettingsManager.Settings.GroqModel);
+                //a model loaded from the Groq API is not in the built-in list
+                if (GroqModelComboBox.SelectedIndex < 0)
+                    GroqModelComboBox.SelectedIndex = 0;
+                GroqTemperatureTextBox.Text = UserSettingsManager.Settings.GroqTemperature.ToString();
+                GroqMaxTokensTextBox.Text = UserSettingsManager.Settings.GroqMaxTokens.ToString();
+            }
+            //show the levels cached for the selected model first, a saved effort like "Xhigh" only
+            //exists in that list and would silently fall back to Auto when it is applied afterwards
+            ApplyCachedGroqReasoningLevels(GroqModelComboBox.Text);
+            //empty effort means "Auto (model default)"
+            GroqReasoningComboBox.SelectedIndex = GroqReasoningComboBox.FindStringExact(UserSettingsManager.Settings.GroqReasoningEffortComboBox ?? "");
+            if (GroqReasoningComboBox.SelectedIndex < 0)
+            {
+                GroqReasoningComboBox.SelectedIndex = 0;
+            }
             ElevenlabsAPIKeyTextBox.Text = UserSettingsManager.Settings.ElevenLabsAPIkey;
             ElevenLabsModelComboBox.SelectedIndex = ElevenLabsModelComboBox.FindStringExact(UserSettingsManager.Settings.ElevenLabsModel);
             if (ElevenLabsModelComboBox.SelectedIndex == -1)
@@ -379,7 +427,21 @@ namespace BanterBrain_Buddy
             OllamaNoReasoningCheckBox.Checked = !UserSettingsManager.Settings.OllamaThinkingCheckBox;
             //older settings files have no value for this, 0 means "use the Ollama server default"
             OllamaContextTokensTextBox.Text = (UserSettingsManager.Settings.OllamaContextTokens > 0 ? UserSettingsManager.Settings.OllamaContextTokens : 0).ToString();
-            GPTNoReasoningCheckBox.Checked = UserSettingsManager.Settings.GPTNoReasoningCheckBox;
+            //the reasoning effort dropdown replaced the old disable-reasoning checkbox, a checked
+            //box from an older settings file migrates to the lowest effort
+            string reasoningEffort = UserSettingsManager.Settings.GPTReasoningEffortComboBox;
+            if (string.IsNullOrEmpty(reasoningEffort) && UserSettingsManager.Settings.GPTNoReasoningCheckBox)
+            {
+                reasoningEffort = "Minimal";
+            }
+            //restore the levels probed earlier for the selected model, so the effort selector is
+            //filled without pressing Load levels again
+            ApplyCachedReasoningLevels(GPTModelComboBox.Text);
+            GPTReasoningComboBox.SelectedIndex = GPTReasoningComboBox.FindStringExact(reasoningEffort);
+            if (GPTReasoningComboBox.SelectedIndex < 0)
+            {
+                GPTReasoningComboBox.SelectedIndex = 0;
+            }
             TwitchAuthServerConfig.SelectedIndex = TwitchAuthServerConfig.FindStringExact(UserSettingsManager.Settings.TwitchAuthServerConfig);
             //Twitch App Client ID is stored in settings.json, load it into the textbox
             TwitchClientIdTextBox.Text = ReadTwitchClientId();
@@ -478,6 +540,14 @@ namespace BanterBrain_Buddy
                 UserSettingsManager.Settings.OllamaURI = OllamaURITextBox.Text;
             if (OllamaContextTokensTextBox.Text.Length > 0)
                 UserSettingsManager.Settings.OllamaContextTokens = ParseIntOrDefault(OllamaContextTokensTextBox.Text, UserSettingsManager.Settings.OllamaContextTokens);
+            if (GroqModelComboBox.Text.Length > 0)
+                UserSettingsManager.Settings.GroqModel = GroqModelComboBox.Text;
+            if (GroqAPIKeyTextBox.Text.Length > 0)
+                UserSettingsManager.Settings.GroqAPIKey = GroqAPIKeyTextBox.Text;
+            if (GroqMaxTokensTextBox.Text.Length > 0)
+                UserSettingsManager.Settings.GroqMaxTokens = ParseIntOrDefault(GroqMaxTokensTextBox.Text, UserSettingsManager.Settings.GroqMaxTokens);
+            if (GroqTemperatureTextBox.Text.Length > 0)
+                UserSettingsManager.Settings.GroqTemperature = ParseFloatOrDefault(GroqTemperatureTextBox.Text, UserSettingsManager.Settings.GroqTemperature);
             if (NativeSpeechRecognitionLanguageComboBox.Text.Length > 1)
                 UserSettingsManager.Settings.NativeSpeechRecognitionLanguageComboBox = NativeSpeechRecognitionLanguageComboBox.Text;
             if (WhisperSpeechRecognitionComboBox.Text.Length > 1)
@@ -488,7 +558,8 @@ namespace BanterBrain_Buddy
                 UserSettingsManager.Settings.WebsourceServer = WebsourceServer.Text;
             UserSettingsManager.Settings.UseOllamaLLMCheckBox = UseOllamaLLMCheckBox.Checked;
             UserSettingsManager.Settings.OllamaThinkingCheckBox = !OllamaNoReasoningCheckBox.Checked;
-            UserSettingsManager.Settings.GPTNoReasoningCheckBox = GPTNoReasoningCheckBox.Checked;
+            UserSettingsManager.Settings.GPTReasoningEffortComboBox = GPTReasoningComboBox.SelectedIndex > 0 ? GPTReasoningComboBox.Text : "";
+            UserSettingsManager.Settings.GroqReasoningEffortComboBox = GroqReasoningComboBox.SelectedIndex > 0 ? GroqReasoningComboBox.Text : "";
             UserSettingsManager.Settings.WebsourceServerEnable = WebsourceServerEnable.Checked;
             UserSettingsManager.Settings.ElevenLabsModel = ElevenLabsModelComboBox.Text;
             UserSettingsManager.SaveSettings();
@@ -1967,27 +2038,28 @@ namespace BanterBrain_Buddy
         [SupportedOSPlatform("windows10.0.10240")]
         private void GPTTemperatureTextBox_KeyPress(object sender, KeyPressEventArgs e)
         {
+            System.Windows.Forms.TextBox currenttb = (System.Windows.Forms.TextBox)sender;
             string decimalSeparator = CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator;
 
-            // Check if the input is not a digit, not a control (like backspace), and not the decimal separator
-            if (!char.IsDigit(e.KeyChar) && !char.IsControl(e.KeyChar) && e.KeyChar.ToString() != decimalSeparator)
+            // control keys like backspace and the delete key always have to pass, otherwise an
+            // impossible value could never be corrected again
+            if (char.IsControl(e.KeyChar))
+            {
+                return;
+            }
+            // only digits and the decimal separator of the current culture can be typed
+            if (!char.IsDigit(e.KeyChar) && e.KeyChar.ToString() != decimalSeparator)
+            {
+                e.Handled = true;  // Ignore the input
+                return;
+            }
+            // the separator is only allowed once
+            if (e.KeyChar.ToString() == decimalSeparator && currenttb.Text.Contains(decimalSeparator))
             {
                 e.Handled = true;  // Ignore the input
             }
-            // Check if it's the decimal separator, and if so, check if there's already one in the text box
-            else if (e.KeyChar.ToString() == decimalSeparator && (sender as System.Windows.Forms.TextBox).Text.IndexOf(decimalSeparator) > -1)
-            {
-                e.Handled = true;  // Ignore the input
-            }
-            else
-            {
-                // Check if the resulting value would be higher than 2
-                string newText = (sender as System.Windows.Forms.TextBox).Text + e.KeyChar;
-                if (float.TryParse(newText, NumberStyles.Float, CultureInfo.CurrentCulture, out float result) && result > 2)
-                {
-                    e.Handled = true;  // Ignore the input
-                }
-            }
+            // the value range itself is checked when the field is left, blocking single keystrokes
+            // here only made it impossible to edit a value that was already out of range
         }
 
         [SupportedOSPlatform("windows10.0.10240")]
@@ -1998,6 +2070,28 @@ namespace BanterBrain_Buddy
             {
                 MessageBox.Show("This field cannot be empty");
                 e.Cancel = true;  // Cancel the event and keep the focus on the TextBox
+                return;
+            }
+            string decimalSeparator = CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator;
+            string text = currenttb.Text.Trim();
+            // a pasted value from another locale still parses, a point is read as the local separator
+            if (decimalSeparator != "." && !text.Contains(decimalSeparator) && text.Contains("."))
+            {
+                text = text.Replace(".", decimalSeparator);
+            }
+            if (!float.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out float temperature))
+            {
+                MessageBox.Show($"Temperature must be a number between 0 and 2");
+                e.Cancel = true;  // Cancel the event and keep the focus on the TextBox
+                return;
+            }
+            // values above the supported range are corrected here, pasting is not seen by KeyPress
+            if (temperature < 0 || temperature > 2)
+            {
+                float clamped = Math.Clamp(temperature, 0f, 2f);
+                _bBBlog.Info($"Temperature {temperature} out of range, clamped to {clamped}");
+                MessageBox.Show($"Temperature must be between 0 and 2, using {clamped.ToString(CultureInfo.CurrentCulture)}");
+                currenttb.Text = clamped.ToString(CultureInfo.CurrentCulture);
             }
         }
 
@@ -2176,6 +2270,164 @@ namespace BanterBrain_Buddy
             }
         }
 
+        //fills the GPT model selector from the library's model listing instead of the statically
+        //configured items, the selected model is restored when it is still offered
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async Task<bool> RefreshGPTModelsFromLibraryAsync(string apiKey)
+        {
+            OpenAIChatGPTPanel.Enabled = false;
+            try
+            {
+                List<string> chatModels;
+                try
+                {
+                    chatModels = await OpenAI.FetchChatModelNamesAsync(apiKey);
+                }
+                catch (Exception ex)
+                {
+                    //this runs unobserved from async void handlers, nothing may escape
+                    _bBBlog.Error("GPT model fetch failed: " + ex.Message);
+                    return false;
+                }
+                if (chatModels.Count < 1)
+                {
+                    _bBBlog.Info("No GPT models fetched, keeping the built-in list");
+                    return false;
+                }
+                string previousSelection = GPTModelComboBox.Text;
+                GPTModelComboBox.Items.Clear();
+                foreach (string model in chatModels)
+                {
+                    GPTModelComboBox.Items.Add(model);
+                }
+                //prefer the model the user had picked, then the one from the settings, else the first
+                int index = GPTModelComboBox.FindStringExact(previousSelection);
+                if (index < 0)
+                    index = GPTModelComboBox.FindStringExact(UserSettingsManager.Settings.GPTModel);
+                if (index >= 0)
+                    GPTModelComboBox.SelectedIndex = index;
+                else
+                    GPTModelComboBox.SelectedIndex = 0;
+                //keep the list, the selector is filled from this cache on every restart
+                UserSettingsManager.Settings.GPTModelListCache = chatModels;
+                UserSettingsManager.SaveSettings();
+                _bBBlog.Info($"Loaded {chatModels.Count} GPT models from the OpenAI API");
+                return true;
+            }
+            finally
+            {
+                OpenAIChatGPTPanel.Enabled = true;
+            }
+        }
+
+        //pulls the model list for the entered (or saved) key into the GPT model selector
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async void GPTLoadModelsButton_Click(object sender, EventArgs e)
+        {
+            string apiKey = GPTAPIKeyTextBox.Text;
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                apiKey = UserSettingsManager.Settings.GPTAPIKey;
+            }
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                _bBBlog.Info("GPT model list load requested without an API key");
+                MessageBox.Show("Enter an OpenAI API key first", "GPT models", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            GPTLoadModelsButton.Enabled = false;
+            bool loaded = await RefreshGPTModelsFromLibraryAsync(apiKey);
+            GPTLoadModelsButton.Enabled = true;
+            if (!loaded)
+            {
+                MessageBox.Show("Could not load the model list. Check the API key or your internet connection.", "GPT models", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        //refills the reasoning effort selector with the levels cached for a model, the current pick
+        //is kept when the model also supports it. Returns false when the model was never fetched,
+        //the caller then leaves the list as it is until Load levels probes the API
+        [SupportedOSPlatform("windows10.0.10240")]
+        private bool ApplyCachedReasoningLevels(string model)
+        {
+            Dictionary<string, List<string>> cache = UserSettingsManager.Settings.GPTReasoningLevelsCache;
+            if (cache == null || string.IsNullOrEmpty(model) || !cache.TryGetValue(model, out List<string> levels) || levels == null)
+            {
+                return false;
+            }
+            string previousSelection = GPTReasoningComboBox.Text;
+            GPTReasoningComboBox.Items.Clear();
+            GPTReasoningComboBox.Items.Add("Auto (model default)");
+            foreach (string level in levels)
+            {
+                GPTReasoningComboBox.Items.Add(level);
+            }
+            int index = GPTReasoningComboBox.FindStringExact(previousSelection);
+            GPTReasoningComboBox.SelectedIndex = index >= 0 ? index : 0;
+            return true;
+        }
+
+        //when the user picks another model, show the reasoning levels cached for it, no API call
+        [SupportedOSPlatform("windows10.0.10240")]
+        private void GPTModelComboBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            ApplyCachedReasoningLevels(GPTModelComboBox.Text);
+        }
+
+        //asks the OpenAI API which reasoning effort levels the model in the GPT model selector
+        //supports and fills the effort dropdown with them, the models endpoints do not report
+        //capabilities so the fetch uses a rejected probe request, see OpenAI.FetchReasoningEffortLevelsAsync
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async void GPTReasoningLoadButton_Click(object sender, EventArgs e)
+        {
+            string apiKey = GPTAPIKeyTextBox.Text;
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                apiKey = UserSettingsManager.Settings.GPTAPIKey;
+            }
+            string model = GPTModelComboBox.Text;
+            if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(model))
+            {
+                _bBBlog.Info("Reasoning levels requested without an API key or model");
+                MessageBox.Show("Select a GPT model and enter an OpenAI API key first", "Reasoning effort", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            GPTReasoningLoadButton.Enabled = false;
+            OpenAIChatGPTPanel.Enabled = false;
+            List<string> levels;
+            string fetchError;
+            try
+            {
+                (levels, fetchError) = await OpenAI.FetchReasoningEffortLevelsAsync(apiKey, model);
+            }
+            finally
+            {
+                GPTReasoningLoadButton.Enabled = true;
+                OpenAIChatGPTPanel.Enabled = true;
+            }
+            if (levels == null)
+            {
+                //show OpenAI's own reason, a 429 for example means the account has no credits
+                MessageBox.Show($"OpenAI did not report the reasoning levels for this model:\r\n\r\n{fetchError}", "Reasoning effort", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            if (levels.Count < 1)
+            {
+                _bBBlog.Info($"OpenAI reports {model} has no reasoning settings");
+            }
+            //remember the levels for this model, an empty list caches "no reasoning settings" too
+            UserSettingsManager.Settings.GPTReasoningLevelsCache ??= [];
+            UserSettingsManager.Settings.GPTReasoningLevelsCache[model] = levels;
+            UserSettingsManager.SaveSettings();
+            ApplyCachedReasoningLevels(model);
+            if (levels.Count < 1)
+            {
+                MessageBox.Show($"The model \"{model}\" has no reasoning effort settings.", "Reasoning effort", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            _bBBlog.Info($"Loaded {levels.Count} reasoning levels for {model}");
+        }
+
         [SupportedOSPlatform("windows10.0.10240")]
         private async void OpenAIChatGPTPanel_Validating(object sender, CancelEventArgs e)
         {
@@ -2203,6 +2455,279 @@ namespace BanterBrain_Buddy
                     UserSettingsManager.Settings.GPTAPIKey = "";
                     UserSettingsManager.SaveSettings();
                 }
+            }
+        }
+
+        //checks the entered Groq key with a free model listing call and saves it when valid,
+        //mirrors the OpenAI panel handler
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async void GroqPanel_Validating(object sender, CancelEventArgs e)
+        {
+            if (GroqPanel.Visible)
+            {
+                if (GroqAPIKeyTextBox.Text.Length > 1)
+                {
+                    //we need to see if the entered key is valid
+                    if (!await Groq.ValidateApiKeyAsync(GroqAPIKeyTextBox.Text))
+                    {
+                        MessageBox.Show("Invalid Groq API key. Value cleared", "Groq API key error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        GroqAPIKeyTextBox.Text = "";
+                        e.Cancel = true;
+                    }
+                    else
+                    {
+                        //might as well save since its a valid key
+                        UserSettingsManager.Settings.GroqAPIKey = GroqAPIKeyTextBox.Text;
+                        UserSettingsManager.SaveSettings();
+                    }
+                }
+                else
+                {
+                    //its empty so lets save it
+                    UserSettingsManager.Settings.GroqAPIKey = "";
+                    UserSettingsManager.SaveSettings();
+                }
+            }
+        }
+
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async void GroqTestButton_Click(object sender, EventArgs e)
+        {
+            if (await Groq.ValidateApiKeyAsync(GroqAPIKeyTextBox.Text))
+            {
+                _bBBlog.Info("Groq API key is valid");
+                MessageBox.Show("Groq API key is valid", "Groq API Test", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            else
+            {
+                _bBBlog.Error("Groq API key is invalid");
+                MessageBox.Show("Groq API key is invalid", "Groq API Test", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        //pulls the model list for the entered (or saved) key into the Groq model selector
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async void GroqLoadModelsButton_Click(object sender, EventArgs e)
+        {
+            string apiKey = GroqAPIKeyTextBox.Text;
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                apiKey = UserSettingsManager.Settings.GroqAPIKey;
+            }
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                _bBBlog.Info("Groq model list load requested without an API key");
+                MessageBox.Show("Enter a Groq API key first", "Groq models", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            GroqLoadModelsButton.Enabled = false;
+            bool loaded = await RefreshGroqModelsFromAPIAsync(apiKey);
+            GroqLoadModelsButton.Enabled = true;
+            if (!loaded)
+            {
+                MessageBox.Show("Could not load the model list. Check the API key or your internet connection.", "Groq models", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        //fills the Groq model selector from Groq's model listing instead of the statically
+        //configured items, the selected model is restored when it is still offered
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async Task<bool> RefreshGroqModelsFromAPIAsync(string apiKey)
+        {
+            GroqPanel.Enabled = false;
+            try
+            {
+                List<string> chatModels;
+                try
+                {
+                    chatModels = await Groq.FetchChatModelNamesAsync(apiKey);
+                }
+                catch (Exception ex)
+                {
+                    //this runs unobserved from async void handlers, nothing may escape
+                    _bBBlog.Error("Groq model fetch failed: " + ex.Message);
+                    return false;
+                }
+                if (chatModels.Count < 1)
+                {
+                    _bBBlog.Info("No Groq models fetched, keeping the built-in list");
+                    return false;
+                }
+                string previousSelection = GroqModelComboBox.Text;
+                GroqModelComboBox.Items.Clear();
+                foreach (string model in chatModels)
+                {
+                    GroqModelComboBox.Items.Add(model);
+                }
+                //prefer the model the user had picked, then the one from the settings, else the first
+                int index = GroqModelComboBox.FindStringExact(previousSelection);
+                if (index < 0)
+                    index = GroqModelComboBox.FindStringExact(UserSettingsManager.Settings.GroqModel ?? "");
+                if (index >= 0)
+                    GroqModelComboBox.SelectedIndex = index;
+                else
+                    GroqModelComboBox.SelectedIndex = 0;
+                //keep the list, the selector is filled from this cache on every restart
+                UserSettingsManager.Settings.GroqModelListCache = chatModels;
+                UserSettingsManager.SaveSettings();
+                _bBBlog.Info($"Loaded {chatModels.Count} Groq models from the Groq API");
+                return true;
+            }
+            finally
+            {
+                GroqPanel.Enabled = true;
+            }
+        }
+
+        //asks the Groq API which reasoning effort levels the model in the Groq model selector
+        //supports and fills the effort dropdown with them, the models endpoints do not report
+        //capabilities so the fetch uses a rejected probe request, see Groq.FetchReasoningEffortLevelsAsync
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async void GroqReasoningLoadButton_Click(object sender, EventArgs e)
+        {
+            string apiKey = GroqAPIKeyTextBox.Text;
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                apiKey = UserSettingsManager.Settings.GroqAPIKey;
+            }
+            string model = GroqModelComboBox.Text;
+            if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(model))
+            {
+                _bBBlog.Info("Reasoning levels requested without an API key or model");
+                MessageBox.Show("Select a Groq model and enter a Groq API key first", "Reasoning effort", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            GroqReasoningLoadButton.Enabled = false;
+            GroqPanel.Enabled = false;
+            List<string> levels;
+            string fetchError;
+            try
+            {
+                (levels, fetchError) = await Groq.FetchReasoningEffortLevelsAsync(apiKey, model);
+            }
+            finally
+            {
+                GroqReasoningLoadButton.Enabled = true;
+                GroqPanel.Enabled = true;
+            }
+            if (levels == null)
+            {
+                //show Groq's own reason, a 401 for example means the key was rejected
+                MessageBox.Show($"Groq did not report the reasoning levels for this model:\r\n\r\n{fetchError}", "Reasoning effort", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            if (levels.Count < 1)
+            {
+                _bBBlog.Info($"Groq reports {model} has no reasoning settings");
+            }
+            //remember the levels for this model, an empty list caches "no reasoning settings" too
+            UserSettingsManager.Settings.GroqReasoningLevelsCache ??= [];
+            UserSettingsManager.Settings.GroqReasoningLevelsCache[model] = levels;
+            UserSettingsManager.SaveSettings();
+            ApplyCachedGroqReasoningLevels(model);
+            if (levels.Count < 1)
+            {
+                MessageBox.Show($"The model \"{model}\" has no reasoning effort settings.", "Reasoning effort", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            _bBBlog.Info($"Loaded {levels.Count} reasoning levels for {model}");
+        }
+
+        //refills the Groq reasoning effort selector with the levels cached for a model, the current
+        //pick is kept when the model also supports it. Returns false when the model was never
+        //fetched, the caller then leaves the list as it is until Load levels probes the API
+        [SupportedOSPlatform("windows10.0.10240")]
+        private bool ApplyCachedGroqReasoningLevels(string model)
+        {
+            Dictionary<string, List<string>> cache = UserSettingsManager.Settings.GroqReasoningLevelsCache;
+            if (cache == null || string.IsNullOrEmpty(model) || !cache.TryGetValue(model, out List<string> levels) || levels == null)
+            {
+                return false;
+            }
+            string previousSelection = GroqReasoningComboBox.Text;
+            GroqReasoningComboBox.Items.Clear();
+            GroqReasoningComboBox.Items.Add("Auto (model default)");
+            foreach (string level in levels)
+            {
+                GroqReasoningComboBox.Items.Add(level);
+            }
+            int index = GroqReasoningComboBox.FindStringExact(previousSelection);
+            GroqReasoningComboBox.SelectedIndex = index >= 0 ? index : 0;
+            return true;
+        }
+
+        //when the user picks another Groq model, show the reasoning levels cached for it, no API call
+        [SupportedOSPlatform("windows10.0.10240")]
+        private void GroqModelComboBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            //a model that was never probed has no known levels. Leaving the list of the previous
+            //model up makes it look like Groq answered for this one, so go back to the built-in items
+            if (!ApplyCachedGroqReasoningLevels(GroqModelComboBox.Text))
+            {
+                string previousSelection = GroqReasoningComboBox.Text;
+                GroqReasoningComboBox.Items.Clear();
+                GroqReasoningComboBox.Items.AddRange(new object[] { "Auto (model default)", "Minimal", "Low", "Medium", "High" });
+                int index = GroqReasoningComboBox.FindStringExact(previousSelection);
+                GroqReasoningComboBox.SelectedIndex = index >= 0 ? index : 0;
+                _bBBlog.Info($"No cached reasoning levels for {GroqModelComboBox.Text}, using the built-in list until Load levels");
+            }
+        }
+
+        //sends one small real chat request with the values currently in the Groq panel so the
+        //provider itself confirms the key, model, temperature, max tokens and reasoning effort
+        //all work together, obvious local range errors are reported without calling the API
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async void GroqTestSettingsButton_Click(object sender, EventArgs e)
+        {
+            string apiKey = GroqAPIKeyTextBox.Text;
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                apiKey = UserSettingsManager.Settings.GroqAPIKey;
+            }
+            string model = GroqModelComboBox.Text;
+            if (string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(model))
+            {
+                _bBBlog.Info("Groq settings test requested without an API key or model");
+                MessageBox.Show("Enter a Groq API key and select a model first", "Groq settings test", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            //empty boxes fall back to the saved values, the parse helpers reject junk input too
+            float temperature = ParseFloatOrDefault(GroqTemperatureTextBox.Text, UserSettingsManager.Settings.GroqTemperature);
+            int maxTokens = ParseIntOrDefault(GroqMaxTokensTextBox.Text, UserSettingsManager.Settings.GroqMaxTokens);
+            if (temperature < 0 || temperature > 2)
+            {
+                _bBBlog.Info("Groq settings test blocked by out of range temperature: " + temperature);
+                MessageBox.Show("Temperature must be between 0 and 2", "Groq settings test", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (maxTokens < 1)
+            {
+                _bBBlog.Info("Groq settings test blocked by invalid max tokens: " + maxTokens);
+                MessageBox.Show("Max tokens must be at least 1", "Groq settings test", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            string reasoningEffort = GroqReasoningComboBox.SelectedIndex > 0 ? GroqReasoningComboBox.Text : "";
+            GroqTestSettingsButton.Enabled = false;
+            GroqPanel.Enabled = false;
+            (bool success, string error) result;
+            try
+            {
+                result = await Groq.TestSettingsAsync(apiKey, model, temperature, maxTokens, reasoningEffort);
+            }
+            finally
+            {
+                GroqTestSettingsButton.Enabled = true;
+                GroqPanel.Enabled = true;
+            }
+            if (result.success)
+            {
+                _bBBlog.Info("Groq settings test passed");
+                MessageBox.Show("Groq accepted all the current settings.", "Groq settings test", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            else
+            {
+                _bBBlog.Error("Groq settings test failed: " + result.error);
+                MessageBox.Show("Groq rejected these settings:\r\n\r\n" + result.error, "Groq settings test", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 

@@ -33,7 +33,8 @@
             System.Windows.Forms.TreeNode treeNode2 = new System.Windows.Forms.TreeNode("OpenAI");
             System.Windows.Forms.TreeNode treeNode3 = new System.Windows.Forms.TreeNode("ElevenLabs");
             System.Windows.Forms.TreeNode treeNode4 = new System.Windows.Forms.TreeNode("Ollama LLM");
-            System.Windows.Forms.TreeNode treeNode5 = new System.Windows.Forms.TreeNode("API Settings", new System.Windows.Forms.TreeNode[] { treeNode1, treeNode2, treeNode3, treeNode4 });
+            System.Windows.Forms.TreeNode treeNode13 = new System.Windows.Forms.TreeNode("Groq");
+            System.Windows.Forms.TreeNode treeNode5 = new System.Windows.Forms.TreeNode("API Settings", new System.Windows.Forms.TreeNode[] { treeNode1, treeNode2, treeNode3, treeNode4, treeNode13 });
             System.Windows.Forms.TreeNode treeNode6 = new System.Windows.Forms.TreeNode("Native speech");
             System.Windows.Forms.TreeNode treeNode7 = new System.Windows.Forms.TreeNode("Personas");
             System.Windows.Forms.TreeNode treeNode8 = new System.Windows.Forms.TreeNode("Microphone");
@@ -129,10 +130,13 @@
             GPTModelComboBox = new System.Windows.Forms.ComboBox();
             label4 = new System.Windows.Forms.Label();
             GPTTestButton = new System.Windows.Forms.Button();
+            GPTLoadModelsButton = new System.Windows.Forms.Button();
             GPTAPIKeyTextBox = new System.Windows.Forms.TextBox();
             GPTAPIKeyLabel = new System.Windows.Forms.Label();
             label7 = new System.Windows.Forms.Label();
-            GPTNoReasoningCheckBox = new System.Windows.Forms.CheckBox();
+            GPTReasoningLabel = new System.Windows.Forms.Label();
+            GPTReasoningComboBox = new System.Windows.Forms.ComboBox();
+            GPTReasoningLoadButton = new System.Windows.Forms.Button();
             NativeSpeechPanel = new System.Windows.Forms.Panel();
             label22 = new System.Windows.Forms.Label();
             NativeSpeechRecognitionLanguageComboBox = new System.Windows.Forms.ComboBox();
@@ -175,6 +179,22 @@
             OllamaNoReasoningCheckBox = new System.Windows.Forms.CheckBox();
             OllamaContextTokensTextBox = new System.Windows.Forms.TextBox();
             OllamaContextTokensLabel = new System.Windows.Forms.Label();
+            GroqPanel = new System.Windows.Forms.Panel();
+            GroqMaxTokensTextBox = new System.Windows.Forms.TextBox();
+            GroqMaxTokensLabel = new System.Windows.Forms.Label();
+            GroqTemperatureTextBox = new System.Windows.Forms.TextBox();
+            GroqTemperatureLabel = new System.Windows.Forms.Label();
+            GroqLoadModelsButton = new System.Windows.Forms.Button();
+            GroqModelComboBox = new System.Windows.Forms.ComboBox();
+            GroqModelLabel = new System.Windows.Forms.Label();
+            GroqTestButton = new System.Windows.Forms.Button();
+            GroqAPIKeyTextBox = new System.Windows.Forms.TextBox();
+            GroqAPIKeyLabel = new System.Windows.Forms.Label();
+            label35 = new System.Windows.Forms.Label();
+            GroqReasoningComboBox = new System.Windows.Forms.ComboBox();
+            GroqReasoningLoadButton = new System.Windows.Forms.Button();
+            GroqReasoningLabel = new System.Windows.Forms.Label();
+            GroqTestSettingsButton = new System.Windows.Forms.Button();
             BBBToolTip = new System.Windows.Forms.ToolTip(components);
             ((System.ComponentModel.ISupportInitialize)splitContainer1).BeginInit();
             splitContainer1.Panel1.SuspendLayout();
@@ -199,6 +219,7 @@
             ((System.ComponentModel.ISupportInitialize)SpeakerDeviceVolumeTrackBar).BeginInit();
             AzurePanel.SuspendLayout();
             OllamaPanel.SuspendLayout();
+            GroqPanel.SuspendLayout();
             SuspendLayout();
             // 
             // splitContainer1
@@ -223,6 +244,7 @@
             splitContainer1.Panel2.Controls.Add(SpeakerPanel);
             splitContainer1.Panel2.Controls.Add(AzurePanel);
             splitContainer1.Panel2.Controls.Add(OllamaPanel);
+            splitContainer1.Panel2.Controls.Add(GroqPanel);
             splitContainer1.Size = new System.Drawing.Size(800, 579);
             splitContainer1.SplitterDistance = 202;
             splitContainer1.TabIndex = 0;
@@ -240,6 +262,8 @@
             treeNode3.Text = "ElevenLabs";
             treeNode4.Name = "OllamaLLM";
             treeNode4.Text = "Ollama LLM";
+            treeNode13.Name = "GroqLLM";
+            treeNode13.Text = "Groq";
             treeNode5.Name = "APISettings";
             treeNode5.Text = "API Settings";
             treeNode6.Name = "NativeSpeech";
@@ -1085,7 +1109,9 @@
             // 
             // OpenAIChatGPTPanel
             // 
-            OpenAIChatGPTPanel.Controls.Add(GPTNoReasoningCheckBox);
+            OpenAIChatGPTPanel.Controls.Add(GPTReasoningComboBox);
+            OpenAIChatGPTPanel.Controls.Add(GPTReasoningLoadButton);
+            OpenAIChatGPTPanel.Controls.Add(GPTReasoningLabel);
             OpenAIChatGPTPanel.Controls.Add(WhisperSpeechRecognitionComboBox);
             OpenAIChatGPTPanel.Controls.Add(label23);
             OpenAIChatGPTPanel.Controls.Add(LLMMaxTokensHelpText);
@@ -1097,6 +1123,7 @@
             OpenAIChatGPTPanel.Controls.Add(GPTModelComboBox);
             OpenAIChatGPTPanel.Controls.Add(label4);
             OpenAIChatGPTPanel.Controls.Add(GPTTestButton);
+            OpenAIChatGPTPanel.Controls.Add(GPTLoadModelsButton);
             OpenAIChatGPTPanel.Controls.Add(GPTAPIKeyTextBox);
             OpenAIChatGPTPanel.Controls.Add(GPTAPIKeyLabel);
             OpenAIChatGPTPanel.Controls.Add(label7);
@@ -1107,16 +1134,41 @@
             OpenAIChatGPTPanel.TabIndex = 3;
             OpenAIChatGPTPanel.Validating += OpenAIChatGPTPanel_Validating;
             // 
-            // GPTNoReasoningCheckBox
+            // GPTReasoningLabel
             // 
-            GPTNoReasoningCheckBox.AutoSize = true;
-            GPTNoReasoningCheckBox.Location = new System.Drawing.Point(37, 215);
-            GPTNoReasoningCheckBox.Name = "GPTNoReasoningCheckBox";
-            GPTNoReasoningCheckBox.Size = new System.Drawing.Size(265, 19);
-            GPTNoReasoningCheckBox.TabIndex = 42;
-            GPTNoReasoningCheckBox.Text = "Disable reasoning (faster, shorter answers)";
-            BBBToolTip.SetToolTip(GPTNoReasoningCheckBox, "Only affects reasoning models (gpt-5 and newer). Those models spend tokens on hidden thinking before they answer, which can cut the answer off or leave it empty. This asks the model for the smallest reasoning effort.");
-            GPTNoReasoningCheckBox.UseVisualStyleBackColor = true;
+            GPTReasoningLabel.AutoSize = true;
+            GPTReasoningLabel.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GPTReasoningLabel.Location = new System.Drawing.Point(37, 218);
+            GPTReasoningLabel.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            GPTReasoningLabel.Name = "GPTReasoningLabel";
+            GPTReasoningLabel.Size = new System.Drawing.Size(96, 15);
+            GPTReasoningLabel.TabIndex = 41;
+            GPTReasoningLabel.Text = "Reasoning effort";
+            // 
+            // GPTReasoningComboBox
+            // 
+            GPTReasoningComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            GPTReasoningComboBox.FormattingEnabled = true;
+            GPTReasoningComboBox.Items.AddRange(new object[] { "Auto (model default)", "Minimal", "Low", "Medium", "High" });
+            GPTReasoningComboBox.Location = new System.Drawing.Point(183, 215);
+            GPTReasoningComboBox.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GPTReasoningComboBox.Name = "GPTReasoningComboBox";
+            GPTReasoningComboBox.Size = new System.Drawing.Size(224, 23);
+            GPTReasoningComboBox.TabIndex = 42;
+            BBBToolTip.SetToolTip(GPTReasoningComboBox, "Only affects reasoning models (gpt-5 and newer). Those models spend tokens on hidden thinking before they answer, which can cut the answer off or leave it empty. Lower effort means faster, shorter answers.");
+            // 
+            // GPTReasoningLoadButton
+            // 
+            GPTReasoningLoadButton.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GPTReasoningLoadButton.Location = new System.Drawing.Point(437, 213);
+            GPTReasoningLoadButton.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GPTReasoningLoadButton.Name = "GPTReasoningLoadButton";
+            GPTReasoningLoadButton.Size = new System.Drawing.Size(88, 27);
+            GPTReasoningLoadButton.TabIndex = 43;
+            GPTReasoningLoadButton.Text = "Load levels";
+            GPTReasoningLoadButton.UseVisualStyleBackColor = true;
+            GPTReasoningLoadButton.Click += GPTReasoningLoadButton_Click;
+            BBBToolTip.SetToolTip(GPTReasoningLoadButton, "Loads the reasoning effort levels the selected GPT model supports directly from the OpenAI API.");
             // 
             // WhisperSpeechRecognitionComboBox
             // 
@@ -1212,7 +1264,7 @@
             GPTModelComboBox.Name = "GPTModelComboBox";
             GPTModelComboBox.Size = new System.Drawing.Size(224, 23);
             GPTModelComboBox.TabIndex = 32;
-            GPTModelComboBox.UseWaitCursor = true;
+            GPTModelComboBox.SelectedIndexChanged += GPTModelComboBox_SelectedIndexChanged;
             // 
             // label4
             // 
@@ -1236,6 +1288,18 @@
             GPTTestButton.Text = "Test";
             GPTTestButton.UseVisualStyleBackColor = true;
             GPTTestButton.Click += GPTTestButton_Click;
+            // 
+            // GPTLoadModelsButton
+            // 
+            GPTLoadModelsButton.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GPTLoadModelsButton.Location = new System.Drawing.Point(437, 80);
+            GPTLoadModelsButton.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GPTLoadModelsButton.Name = "GPTLoadModelsButton";
+            GPTLoadModelsButton.Size = new System.Drawing.Size(88, 27);
+            GPTLoadModelsButton.TabIndex = 40;
+            GPTLoadModelsButton.Text = "Load models";
+            GPTLoadModelsButton.UseVisualStyleBackColor = true;
+            GPTLoadModelsButton.Click += GPTLoadModelsButton_Click;
             // 
             // GPTAPIKeyTextBox
             // 
@@ -1704,6 +1768,197 @@
             label15.TabIndex = 0;
             label15.Text = "Ollama";
             // 
+            // GroqPanel
+            // 
+            GroqPanel.Controls.Add(GroqReasoningComboBox);
+            GroqPanel.Controls.Add(GroqReasoningLoadButton);
+            GroqPanel.Controls.Add(GroqReasoningLabel);
+            GroqPanel.Controls.Add(GroqTestSettingsButton);
+            GroqPanel.Controls.Add(GroqMaxTokensTextBox);
+            GroqPanel.Controls.Add(GroqMaxTokensLabel);
+            GroqPanel.Controls.Add(GroqTemperatureTextBox);
+            GroqPanel.Controls.Add(GroqTemperatureLabel);
+            GroqPanel.Controls.Add(GroqLoadModelsButton);
+            GroqPanel.Controls.Add(GroqModelComboBox);
+            GroqPanel.Controls.Add(GroqModelLabel);
+            GroqPanel.Controls.Add(GroqTestButton);
+            GroqPanel.Controls.Add(GroqAPIKeyTextBox);
+            GroqPanel.Controls.Add(GroqAPIKeyLabel);
+            GroqPanel.Controls.Add(label35);
+            GroqPanel.Dock = System.Windows.Forms.DockStyle.Fill;
+            GroqPanel.Location = new System.Drawing.Point(0, 0);
+            GroqPanel.Name = "GroqPanel";
+            GroqPanel.Size = new System.Drawing.Size(594, 579);
+            GroqPanel.TabIndex = 38;
+            GroqPanel.Validating += GroqPanel_Validating;
+            // 
+            // label35
+            // 
+            label35.AutoSize = true;
+            label35.Location = new System.Drawing.Point(268, 12);
+            label35.Name = "label35";
+            label35.Size = new System.Drawing.Size(35, 15);
+            label35.TabIndex = 0;
+            label35.Text = "Groq";
+            // 
+            // GroqAPIKeyLabel
+            // 
+            GroqAPIKeyLabel.AutoSize = true;
+            GroqAPIKeyLabel.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GroqAPIKeyLabel.Location = new System.Drawing.Point(37, 51);
+            GroqAPIKeyLabel.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            GroqAPIKeyLabel.Name = "GroqAPIKeyLabel";
+            GroqAPIKeyLabel.Size = new System.Drawing.Size(47, 15);
+            GroqAPIKeyLabel.TabIndex = 27;
+            GroqAPIKeyLabel.Text = "API Key";
+            // 
+            // GroqAPIKeyTextBox
+            // 
+            GroqAPIKeyTextBox.Location = new System.Drawing.Point(183, 47);
+            GroqAPIKeyTextBox.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GroqAPIKeyTextBox.Name = "GroqAPIKeyTextBox";
+            GroqAPIKeyTextBox.PasswordChar = '*';
+            GroqAPIKeyTextBox.Size = new System.Drawing.Size(224, 23);
+            GroqAPIKeyTextBox.TabIndex = 28;
+            // 
+            // GroqTestButton
+            // 
+            GroqTestButton.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GroqTestButton.Location = new System.Drawing.Point(437, 47);
+            GroqTestButton.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GroqTestButton.Name = "GroqTestButton";
+            GroqTestButton.Size = new System.Drawing.Size(88, 27);
+            GroqTestButton.TabIndex = 29;
+            GroqTestButton.Text = "Test";
+            GroqTestButton.UseVisualStyleBackColor = true;
+            GroqTestButton.Click += GroqTestButton_Click;
+            // 
+            // GroqModelLabel
+            // 
+            GroqModelLabel.AutoSize = true;
+            GroqModelLabel.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GroqModelLabel.Location = new System.Drawing.Point(37, 82);
+            GroqModelLabel.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            GroqModelLabel.Name = "GroqModelLabel";
+            GroqModelLabel.Size = new System.Drawing.Size(66, 15);
+            GroqModelLabel.TabIndex = 31;
+            GroqModelLabel.Text = "Groq Model";
+            // 
+            // GroqModelComboBox
+            // 
+            GroqModelComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            GroqModelComboBox.FormattingEnabled = true;
+            GroqModelComboBox.Items.AddRange(new object[] { "llama-3.1-8b-instant", "llama-3.3-70b-versatile" });
+            GroqModelComboBox.Location = new System.Drawing.Point(183, 82);
+            GroqModelComboBox.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GroqModelComboBox.Name = "GroqModelComboBox";
+            GroqModelComboBox.Size = new System.Drawing.Size(224, 23);
+            GroqModelComboBox.TabIndex = 32;
+            GroqModelComboBox.SelectedIndexChanged += GroqModelComboBox_SelectedIndexChanged;
+            // 
+            // GroqLoadModelsButton
+            // 
+            GroqLoadModelsButton.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GroqLoadModelsButton.Location = new System.Drawing.Point(437, 80);
+            GroqLoadModelsButton.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GroqLoadModelsButton.Name = "GroqLoadModelsButton";
+            GroqLoadModelsButton.Size = new System.Drawing.Size(88, 27);
+            GroqLoadModelsButton.TabIndex = 40;
+            GroqLoadModelsButton.Text = "Load models";
+            GroqLoadModelsButton.UseVisualStyleBackColor = true;
+            GroqLoadModelsButton.Click += GroqLoadModelsButton_Click;
+            BBBToolTip.SetToolTip(GroqLoadModelsButton, "Pulls the model list for your Groq key into the selector.");
+            // 
+            // GroqTemperatureLabel
+            // 
+            GroqTemperatureLabel.AutoSize = true;
+            GroqTemperatureLabel.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GroqTemperatureLabel.Location = new System.Drawing.Point(183, 118);
+            GroqTemperatureLabel.Name = "GroqTemperatureLabel";
+            GroqTemperatureLabel.Size = new System.Drawing.Size(73, 15);
+            GroqTemperatureLabel.TabIndex = 35;
+            GroqTemperatureLabel.Text = "Temperature";
+            // 
+            // GroqTemperatureTextBox
+            // 
+            GroqTemperatureTextBox.Location = new System.Drawing.Point(183, 136);
+            GroqTemperatureTextBox.Name = "GroqTemperatureTextBox";
+            GroqTemperatureTextBox.Size = new System.Drawing.Size(100, 23);
+            GroqTemperatureTextBox.TabIndex = 33;
+            GroqTemperatureTextBox.Text = "0.5";
+            BBBToolTip.SetToolTip(GroqTemperatureTextBox, "Default: 0.5. Maximum 2");
+            GroqTemperatureTextBox.KeyPress += GPTTemperatureTextBox_KeyPress;
+            GroqTemperatureTextBox.Validating += GPTTemperatureTextBox_Validating;
+            // 
+            // GroqMaxTokensLabel
+            // 
+            GroqMaxTokensLabel.AutoSize = true;
+            GroqMaxTokensLabel.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GroqMaxTokensLabel.Location = new System.Drawing.Point(307, 116);
+            GroqMaxTokensLabel.Name = "GroqMaxTokensLabel";
+            GroqMaxTokensLabel.Size = new System.Drawing.Size(68, 15);
+            GroqMaxTokensLabel.TabIndex = 36;
+            GroqMaxTokensLabel.Text = "Max tokens";
+            // 
+            // GroqMaxTokensTextBox
+            // 
+            GroqMaxTokensTextBox.Location = new System.Drawing.Point(307, 136);
+            GroqMaxTokensTextBox.Name = "GroqMaxTokensTextBox";
+            GroqMaxTokensTextBox.Size = new System.Drawing.Size(100, 23);
+            GroqMaxTokensTextBox.TabIndex = 34;
+            GroqMaxTokensTextBox.Text = "100";
+            GroqMaxTokensTextBox.KeyPress += GPTMaxTokensTextBox_KeyPress;
+            GroqMaxTokensTextBox.Validating += GPTMaxTokensTextBox_Validating;
+            // 
+            // GroqReasoningLabel
+            // 
+            GroqReasoningLabel.AutoSize = true;
+            GroqReasoningLabel.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GroqReasoningLabel.Location = new System.Drawing.Point(37, 173);
+            GroqReasoningLabel.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            GroqReasoningLabel.Name = "GroqReasoningLabel";
+            GroqReasoningLabel.Size = new System.Drawing.Size(96, 15);
+            GroqReasoningLabel.TabIndex = 41;
+            GroqReasoningLabel.Text = "Reasoning effort";
+            // 
+            // GroqReasoningComboBox
+            // 
+            GroqReasoningComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            GroqReasoningComboBox.FormattingEnabled = true;
+            GroqReasoningComboBox.Items.AddRange(new object[] { "Auto (model default)", "Minimal", "Low", "Medium", "High" });
+            GroqReasoningComboBox.Location = new System.Drawing.Point(183, 170);
+            GroqReasoningComboBox.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GroqReasoningComboBox.Name = "GroqReasoningComboBox";
+            GroqReasoningComboBox.Size = new System.Drawing.Size(224, 23);
+            GroqReasoningComboBox.TabIndex = 42;
+            BBBToolTip.SetToolTip(GroqReasoningComboBox, "Only affects reasoning models (qwen3, gpt-oss and similar). Those models spend tokens on hidden thinking before they answer, which can cut the answer off or leave it empty. Lower effort means faster, shorter answers.");
+            // 
+            // GroqReasoningLoadButton
+            // 
+            GroqReasoningLoadButton.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GroqReasoningLoadButton.Location = new System.Drawing.Point(437, 168);
+            GroqReasoningLoadButton.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GroqReasoningLoadButton.Name = "GroqReasoningLoadButton";
+            GroqReasoningLoadButton.Size = new System.Drawing.Size(88, 27);
+            GroqReasoningLoadButton.TabIndex = 43;
+            GroqReasoningLoadButton.Text = "Load levels";
+            GroqReasoningLoadButton.UseVisualStyleBackColor = true;
+            GroqReasoningLoadButton.Click += GroqReasoningLoadButton_Click;
+            BBBToolTip.SetToolTip(GroqReasoningLoadButton, "Fills the reasoning effort list with the levels supported by the selected Groq model.");
+            // 
+            // GroqTestSettingsButton
+            // 
+            GroqTestSettingsButton.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GroqTestSettingsButton.Location = new System.Drawing.Point(437, 112);
+            GroqTestSettingsButton.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GroqTestSettingsButton.Name = "GroqTestSettingsButton";
+            GroqTestSettingsButton.Size = new System.Drawing.Size(100, 27);
+            GroqTestSettingsButton.TabIndex = 44;
+            GroqTestSettingsButton.Text = "Test Settings";
+            GroqTestSettingsButton.UseVisualStyleBackColor = true;
+            GroqTestSettingsButton.Click += GroqTestSettingsButton_Click;
+            BBBToolTip.SetToolTip(GroqTestSettingsButton, "Sends one small chat request with the values in this panel so Groq confirms the key, model, temperature, max tokens and reasoning effort all work together.");
+            // 
             // SettingsForm
             // 
             AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
@@ -1752,6 +2007,8 @@
             AzurePanel.PerformLayout();
             OllamaPanel.ResumeLayout(false);
             OllamaPanel.PerformLayout();
+            GroqPanel.ResumeLayout(false);
+            GroqPanel.PerformLayout();
             ResumeLayout(false);
         }
 
@@ -1808,9 +2065,12 @@
         private System.Windows.Forms.ComboBox GPTModelComboBox;
         private System.Windows.Forms.Label label4;
         private System.Windows.Forms.Button GPTTestButton;
+        private System.Windows.Forms.Button GPTLoadModelsButton;
         private System.Windows.Forms.TextBox GPTAPIKeyTextBox;
         private System.Windows.Forms.Label GPTAPIKeyLabel;
-        private System.Windows.Forms.CheckBox GPTNoReasoningCheckBox;
+        private System.Windows.Forms.Label GPTReasoningLabel;
+        private System.Windows.Forms.ComboBox GPTReasoningComboBox;
+        private System.Windows.Forms.Button GPTReasoningLoadButton;
         private System.Windows.Forms.GroupBox EventSubGroupbox;
         private System.Windows.Forms.CheckBox TwitchMockEventSub;
         private System.Windows.Forms.Button TwitchEventSubTestButton;
@@ -1840,6 +2100,22 @@
         private System.Windows.Forms.CheckBox OllamaNoReasoningCheckBox;
         private System.Windows.Forms.TextBox OllamaContextTokensTextBox;
         private System.Windows.Forms.Label OllamaContextTokensLabel;
+        private System.Windows.Forms.Panel GroqPanel;
+        private System.Windows.Forms.Label label35;
+        private System.Windows.Forms.Label GroqAPIKeyLabel;
+        private System.Windows.Forms.TextBox GroqAPIKeyTextBox;
+        private System.Windows.Forms.Button GroqTestButton;
+        private System.Windows.Forms.Label GroqModelLabel;
+        private System.Windows.Forms.ComboBox GroqModelComboBox;
+        private System.Windows.Forms.Button GroqLoadModelsButton;
+        private System.Windows.Forms.Label GroqTemperatureLabel;
+        private System.Windows.Forms.TextBox GroqTemperatureTextBox;
+        private System.Windows.Forms.Label GroqMaxTokensLabel;
+        private System.Windows.Forms.TextBox GroqMaxTokensTextBox;
+        private System.Windows.Forms.Label GroqReasoningLabel;
+        private System.Windows.Forms.ComboBox GroqReasoningComboBox;
+        private System.Windows.Forms.Button GroqReasoningLoadButton;
+        private System.Windows.Forms.Button GroqTestSettingsButton;
         private System.Windows.Forms.Panel NativeSpeechPanel;
         private System.Windows.Forms.Label label22;
         private System.Windows.Forms.ComboBox NativeSpeechRecognitionLanguageComboBox;
