@@ -63,9 +63,27 @@ namespace BanterBrain_Buddy
         [SupportedOSPlatform("windows10.0.10240")]
         public void Unsubscribe()
         {
-            m_GlobalHook.KeyDown -= GlobalHookKeyDown;
-            //It is recommened to dispose it
-            m_GlobalHook.Dispose();
+            //the escape key path calls this and Close() triggers FormClosing which calls it again,
+            //so guard against a null hook (form closed before Shown) and a double dispose
+            if (m_GlobalHook == null)
+            {
+                return;
+            }
+            try
+            {
+                m_GlobalHook.KeyDown -= GlobalHookKeyDown;
+                m_GlobalHook.KeyUp -= GlobalHookKeyUp;
+                //It is recommened to dispose it
+                m_GlobalHook.Dispose();
+            }
+            catch (ObjectDisposedException)
+            {
+                _bBBlog.Debug("Hotkey hook already disposed");
+            }
+            finally
+            {
+                m_GlobalHook = null;
+            }
         }
 
         [SupportedOSPlatform("windows10.0.10240")]

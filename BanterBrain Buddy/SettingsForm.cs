@@ -598,9 +598,17 @@ namespace BanterBrain_Buddy
 
                 _bBBlog.Debug("Personas panel visible. we need to load the persona's and enable the eventhandlers");
                 await LoadPersonas();
-                while (PersonaComboBox.Items.Count == 0)
+                //bound the wait, if the personas never load we must not hang here forever
+                int personaWaitTries = 0;
+                while (PersonaComboBox.Items.Count == 0 && personaWaitTries++ < 10)
                 {
                     await Task.Delay(1000);
+                }
+                if (PersonaComboBox.Items.Count == 0)
+                {
+                    _bBBlog.Error("No personas available after waiting, skipping persona load");
+                    PersonasPanel.Enabled = true;
+                    return;
                 }
 
                 //prevent deleting of Default persona
@@ -774,14 +782,26 @@ namespace BanterBrain_Buddy
                     new() { Name = "Default", RoleText = "You are a cheeky streamer assistant with a silly personality.", VoiceProvider = "Native", VoiceName = tmpNativeVoice, VoiceOptions = [], Volume = 0, Rate = 0, Pitch = 0 }
                 };
                 string tmpString = JsonConvert.SerializeObject(newPersonas);
-                using var sw = new StreamWriter(tmpFile, true);
-                sw.Write(tmpString);
+                try
+                {
+                    //the settings directory might not exist yet on a first start, StreamWriter throws without it
+                    Directory.CreateDirectory(Path.GetDirectoryName(tmpFile));
+                    using var sw = new StreamWriter(tmpFile, true);
+                    sw.Write(tmpString);
+                }
+                catch (Exception ex)
+                {
+                    _bBBlog.Error("Could not create the personas file: " + ex.Message);
+                    return;
+                }
             }
-            else
+            //load the file in both cases, a freshly created persona file still has to fill the
+            //combobox otherwise the panel stays empty and the wait loop above never finishes
+            _bBBlog.Debug("Loading personas from file into the list.");
+            personas.Clear();
+            PersonaComboBox.Items.Clear();
+            try
             {
-                _bBBlog.Debug("Personas file found, loading it.");
-                personas.Clear();
-                PersonaComboBox.Items.Clear();
                 using var sr = new StreamReader(tmpFile);
                 var tmpString = sr.ReadToEnd();
                 var tmpPersonas = JsonConvert.DeserializeObject<List<Personas>>(tmpString) ?? new List<Personas>();
@@ -791,6 +811,10 @@ namespace BanterBrain_Buddy
                     personas.Add(persona);
                     PersonaComboBox.Items.Add(persona.Name);
                 }
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("Could not read the personas file: " + ex.Message);
             }
             DeletePersona.Enabled = true;
         }
@@ -992,8 +1016,12 @@ namespace BanterBrain_Buddy
                 TTSOutputVoice.SelectedIndex = TTSOutputVoice.Items.IndexOf(tmpVoice[0]);
             }
             TTSOutputVoice.Sorted = true;
-
-            TTSOutputVoice.Text = TTSOutputVoice.Items[0].ToString();
+            //the API can return an empty voice list, picking item 0 would throw
+            if (TTSOutputVoice.Items.Count > 0)
+            {
+                TTSOutputVoice.SelectedIndex = 0;
+                TTSOutputVoice.Text = TTSOutputVoice.Items[0].ToString();
+            }
             if (TTSOutputVoiceOption2.Text.Length < 1)
             {
                 TTSOutputVoiceOption1.Text = "100";
@@ -1014,7 +1042,12 @@ namespace BanterBrain_Buddy
                 TTSOutputVoice.Items.Add(OutputVoice);
             }
             TTSOutputVoice.Sorted = true;
-            TTSOutputVoice.Text = TTSOutputVoice.Items[0].ToString();
+            //a machine without installed voices gives an empty list
+            if (TTSOutputVoice.Items.Count > 0)
+            {
+                TTSOutputVoice.SelectedIndex = 0;
+                TTSOutputVoice.Text = TTSOutputVoice.Items[0].ToString();
+            }
             TTSOutputVoiceOption1.Text = "";
         }
 
@@ -1072,8 +1105,12 @@ namespace BanterBrain_Buddy
                 TTSOutputVoice.Items.Add(azureRegionVoice.LocaleDisplayname + "-" + azureRegionVoice.Gender + "-" + azureRegionVoice.LocalName);
             }
             TTSOutputVoice.Sorted = true;
-            //select the first item, to have at least something
-            TTSOutputVoice.Text = TTSOutputVoice.Items[0].ToString();
+            //select the first item, to have at least something, the voice list can be empty
+            if (TTSOutputVoice.Items.Count > 0)
+            {
+                TTSOutputVoice.SelectedIndex = 0;
+                TTSOutputVoice.Text = TTSOutputVoice.Items[0].ToString();
+            }
             TTSOutputVoiceOption1.Text = "";
             TTSAzureFillOptions(TTSOutputVoice.Text);
         }
@@ -1128,7 +1165,12 @@ namespace BanterBrain_Buddy
                     }
                 }
             }
-            TTSOutputVoiceOption1.Text = TTSOutputVoiceOption1.Items[0].ToString();
+            //a voice without any style gives an empty option list
+            if (TTSOutputVoiceOption1.Items.Count > 0)
+            {
+                TTSOutputVoiceOption1.SelectedIndex = 0;
+                TTSOutputVoiceOption1.Text = TTSOutputVoiceOption1.Items[0].ToString();
+            }
         }
 
         [SupportedOSPlatform("windows10.0.10240")]
@@ -1210,6 +1252,8 @@ namespace BanterBrain_Buddy
         {
             string outputVoice = TTSOutputVoice.Text;
             //output voice text has to be in the format of voiceID;voiceName we need to find it in _elevenLabsVoicesList
+            //the voice fetch can have failed, iterating a null list would crash the async caller
+            if (_elevenLabsVoicesList != null)
             for (int i = 0; i < _elevenLabsVoicesList.Count; i++)
             {
                 if (_elevenLabsVoicesList[i].Contains(outputVoice))
@@ -1584,7 +1628,10 @@ namespace BanterBrain_Buddy
             //if the persona is changed we first need to check if the persona was edited if so we need to ask to save it
             if (personaEdited && PersonasPanel.Visible)
             {
-                _bBBlog.Debug($"Persona {personas[previousPersonaSelectedIndex].Name} was edited, asking to save it");
+                //a hand-edited or emptied persona list can make the previous index invalid
+                string previousPersonaName = (previousPersonaSelectedIndex >= 0 && previousPersonaSelectedIndex < personas.Count)
+                    ? personas[previousPersonaSelectedIndex].Name : "unknown";
+                _bBBlog.Debug($"Persona {previousPersonaName} was edited, asking to save it");
                 var result = MessageBox.Show("Persona Changed. Do you want to save the persona?", "Save Persona", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 if (result == DialogResult.Yes)
                 {
@@ -1610,6 +1657,18 @@ namespace BanterBrain_Buddy
             else
             {
                 PersonaComboBox.SelectedIndex = tmpNewPersonaIndex;
+            }
+
+            //if the list is empty or the index invalid, loading the persona cannot continue
+            if (PersonaComboBox.SelectedIndex < 0 || PersonaComboBox.SelectedIndex >= personas.Count)
+            {
+                _bBBlog.Error("No persona available for the selected index, aborting persona load");
+                PersonasPanel.Enabled = true;
+                if (PersonasPanel.Visible)
+                {
+                    EnablePersonaEventHandlers();
+                }
+                return;
             }
 
             var selectedPersona = personas[PersonaComboBox.SelectedIndex];
@@ -1679,10 +1738,14 @@ namespace BanterBrain_Buddy
                 if (TTSProviderComboBox.Text == "ElevenLabs")
                 {
                     _bBBlog.Debug("Persona Elevenlabs voice options found, loading them into the combo box");
-                    _bBBlog.Debug($"Option1: {selectedPersona.VoiceOptions[0]} option2: {selectedPersona.VoiceOptions[1]} option3: {selectedPersona.VoiceOptions[2]}");
-                    TTSOutputVoiceOption1.Text = selectedPersona.VoiceOptions[0];
-                    TTSOutputVoiceOption2.Text = selectedPersona.VoiceOptions[1];
-                    TTSOutputVoiceOption3.Text = selectedPersona.VoiceOptions[2];
+                    //a hand edited persona can have fewer than the three options ElevenLabs uses
+                    string elevenOption1 = selectedPersona.VoiceOptions.Count > 0 ? selectedPersona.VoiceOptions[0] : "100";
+                    string elevenOption2 = selectedPersona.VoiceOptions.Count > 1 ? selectedPersona.VoiceOptions[1] : "100";
+                    string elevenOption3 = selectedPersona.VoiceOptions.Count > 2 ? selectedPersona.VoiceOptions[2] : "0";
+                    _bBBlog.Debug($"Option1: {elevenOption1} option2: {elevenOption2} option3: {elevenOption3}");
+                    TTSOutputVoiceOption1.Text = elevenOption1;
+                    TTSOutputVoiceOption2.Text = elevenOption2;
+                    TTSOutputVoiceOption3.Text = elevenOption3;
                 }
             }
             if (PersonaComboBox.Text == "Default")

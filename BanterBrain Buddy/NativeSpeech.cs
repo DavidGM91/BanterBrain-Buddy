@@ -40,6 +40,11 @@ namespace BanterBrain_Buddy
 
         private void SetSelectedOutputDevice(string OutputDevice)
         {
+            if (string.IsNullOrEmpty(OutputDevice))
+            {
+                _bBBlog.Warn("No output device given for Native TTS, using the default device");
+                return;
+            }
             _bBBlog.Info($"Setting selected output device for Native TTS to: {OutputDevice}");
             for (int i = 0; i < NAudio.Wave.WaveOut.DeviceCount; i++)
             {
@@ -54,20 +59,32 @@ namespace BanterBrain_Buddy
 
         public async Task<bool> NativePlayWaveFile(string _tmpWavFile)
         {
-            SetSelectedOutputDevice(UserSettingsManager.Settings.TTSAudioOutput);
-            _bBBlog.Debug("Playing Native Wave File: " + _tmpWavFile);
-            var waveOut = new WaveOut
+            try
             {
-                DeviceNumber = SelectedOutputDevice
-            };
-            var waveStream = new WaveFileReader(_tmpWavFile);
-            waveOut.Init(waveStream);
-            waveOut.Play();
-            while (waveOut.PlaybackState != PlaybackState.Stopped)
-            {
-                await Task.Delay(500);
+                SetSelectedOutputDevice(UserSettingsManager.Settings.TTSAudioOutput);
+                _bBBlog.Debug("Playing Native Wave File: " + _tmpWavFile);
+                var waveOut = new WaveOut
+                {
+                    DeviceNumber = SelectedOutputDevice
+                };
+                var waveStream = new WaveFileReader(_tmpWavFile);
+                waveOut.Init(waveStream);
+                waveOut.Play();
+                while (waveOut.PlaybackState != PlaybackState.Stopped)
+                {
+                    await Task.Delay(500);
+                }
+                //release the audio device and the file, they were leaking on every played sound
+                waveOut.Dispose();
+                waveStream.Dispose();
+                return true;
             }
-            return true;
+            catch (Exception ex)
+            {
+                //a missing or corrupt sound file must not crash the async void callers
+                _bBBlog.Error($"Error playing wave file {_tmpWavFile}: {ex.Message}");
+                return false;
+            }
         }
 
         [SupportedOSPlatform("windows10.0.10240")]
@@ -79,8 +96,12 @@ namespace BanterBrain_Buddy
                 //_voiceRate = 0;
                 int voiceVolume = 0;
                 string voicePitch = $"{_voicePitch}%";
-                var tmpSSML = $"<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='{_voiceCulture}'>" +
-                              $"<prosody rate='{_voiceRate}%' volume='{voiceVolume}%' >{TextToSay}</prosody></speak>";
+                //SSML is XML, unescaped text (like & or < from an LLM answer) would fail synthesis
+                string safeText = System.Security.SecurityElement.Escape(TextToSay);
+                //a broken culture (voice name without a language part) must not leave xml:lang empty
+                string cultureForSsml = string.IsNullOrWhiteSpace(_voiceCulture) ? "en-US" : _voiceCulture;
+                var tmpSSML = $"<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='{cultureForSsml}'>" +
+                              $"<prosody rate='{_voiceRate}%' volume='{voiceVolume}%' >{safeText}</prosody></speak>";
                 _bBBlog.Debug("Native SSML: " + tmpSSML);
 
                 // Generate the audio stream from the SSML
@@ -152,6 +173,8 @@ namespace BanterBrain_Buddy
                     {
                         await Task.Delay(500);
                     }
+                    //release the audio device, it was leaking on every spoken line
+                    waveOut.Dispose();
                 }
 
                 return true;
@@ -176,16 +199,40 @@ namespace BanterBrain_Buddy
             _bBBlog.Debug("Init Native Output Device: " + OutputDevice + " using: " + VoiceUsed);
             //we get the culture from teh VoiceUsed string
             //which is basically the last part of the string after the second last -
-            _voiceCulture = VoiceUsed[(VoiceUsed.LastIndexOf('-')-2)..];
+            //the format is Name-Gender-Culture but a hand edited/old persona can break that,
+            //so only parse when the dashes are actually there
+            string selectedVoiceName = VoiceUsed;
+            if (!string.IsNullOrEmpty(VoiceUsed) && VoiceUsed.Contains('-'))
+            {
+                int lastDash = VoiceUsed.LastIndexOf('-');
+                int cultureStart = Math.Max(lastDash - 2, 0);
+                _voiceCulture = VoiceUsed[cultureStart..];
+                selectedVoiceName = VoiceUsed[..VoiceUsed.IndexOf('-')];
+            }
+            else
+            {
+                _bBBlog.Warn($"Voice name \"{VoiceUsed}\" is not in Name-Gender-Culture format, using defaults");
+                _voiceCulture = System.Globalization.CultureInfo.CurrentCulture.Name;
+            }
             _bBBlog.Debug("Init Native Culture: " + _voiceCulture);
             SetSelectedOutputDevice(OutputDevice);
             _nativeSynthesizer = new();
-            string selectedVoiceName = VoiceUsed[..VoiceUsed.IndexOf('-')];
             var selectedVoice = Windows.Media.SpeechSynthesis.SpeechSynthesizer.AllVoices.FirstOrDefault(v => v.DisplayName == selectedVoiceName);
-
-            _bBBlog.Debug("Init Native Voice: " + selectedVoice);
-
-            _nativeSynthesizer.Voice = selectedVoice;
+            if (selectedVoice == null)
+            {
+                //a renamed/uninstalled voice from an old persona file, fall back to the first voice
+                //of the current language (or just the first one) instead of assigning null which
+                //the synthesizer rejects later
+                _bBBlog.Warn($"Native voice \"{selectedVoiceName}\" not found, using a fallback voice");
+                string currentLanguage = System.Globalization.CultureInfo.CurrentCulture.Name;
+                selectedVoice = Windows.Media.SpeechSynthesis.SpeechSynthesizer.AllVoices
+                    .FirstOrDefault(v => v.Language == currentLanguage)
+                    ?? Windows.Media.SpeechSynthesis.SpeechSynthesizer.AllVoices.FirstOrDefault();
+            }
+            if (selectedVoice != null)
+            {
+                _nativeSynthesizer.Voice = selectedVoice;
+            }
 
 
             // Ensure volumeControl is within the expected range
@@ -278,7 +325,7 @@ namespace BanterBrain_Buddy
         {
 
             string culture = UserSettingsManager.Settings.NativeSpeechRecognitionLanguageComboBox;
-            if (culture.Length > 1)
+            if (!string.IsNullOrEmpty(culture) && culture.Length > 1)
             {
                 _bBBlog.Info("Setting Native Speech Recognition Language to: " + culture);
             }

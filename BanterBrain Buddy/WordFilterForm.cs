@@ -34,13 +34,23 @@ namespace BanterBrain_Buddy
             var tmpFile = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "\\BanterBrain\\WordFilter.txt";
 
             //this is just in case. the file should actually be created by MainForm, but you never know!
-            if (!File.Exists(tmpFile))
+            try
             {
-                _bBBlog.Error($"Word Filter file not found, creating it");
-                File.WriteAllText(tmpFile, "fucker,motherfucker,asshole,nigger,nigga,loser,retard,moron,cunt,slut,fag,whore");
+                if (!File.Exists(tmpFile))
+                {
+                    _bBBlog.Error($"Word Filter file not found, creating it");
+                    Directory.CreateDirectory(Path.GetDirectoryName(tmpFile));
+                    File.WriteAllText(tmpFile, "fucker,motherfucker,asshole,nigger,nigga,loser,retard,moron,cunt,slut,fag,whore");
+                }
+                //load the file into the textbox
+                BadWordFilterBox.Text = File.ReadAllText(tmpFile);
             }
-            //load the file into the textbox
-            BadWordFilterBox.Text = File.ReadAllText(tmpFile);
+            catch (Exception ex)
+            {
+                //a missing folder or locked file must not crash the form load
+                _bBBlog.Error("Could not load the word filter file: " + ex.Message);
+                MessageBox.Show("Could not load the word filter file: " + ex.Message, "Word Filter", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
             //to prevent anything from being automatically selected
             BadWordFilterBox.SelectionStart = BadWordFilterBox.Text.Length;
         }
@@ -69,7 +79,17 @@ namespace BanterBrain_Buddy
             }
             
             var tmpFile = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "\\BanterBrain\\WordFilter.txt";
-            File.WriteAllText(tmpFile, badWords);
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(tmpFile));
+                File.WriteAllText(tmpFile, badWords);
+            }
+            catch (Exception ex)
+            {
+                //a locked or unwritable file must not throw out of the closing event
+                _bBBlog.Error("Could not save the word filter file: " + ex.Message);
+                MessageBox.Show("Could not save the word filter file: " + ex.Message, "Word Filter", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         [SupportedOSPlatform("windows10.0.10240")]

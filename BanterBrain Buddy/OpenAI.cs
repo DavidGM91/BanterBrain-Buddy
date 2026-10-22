@@ -37,6 +37,10 @@ namespace BanterBrain_Buddy
         private OpenAIClient _OpenAPI;
         private readonly List<ChatMessage> _chatHistory = new();
         public string OpenAIAPIKey { get; set; }
+        // why the last GetOpenAIIGPTResponse returned null, the caller shows this instead of
+        // guessing at a key or subscription problem, the wrapper knows whether it was the token
+        // budget, the reasoning effort or the server refusing the request
+        public string LastResponseError { get; private set; } = "";
 
         private SettingsManager UserSettingsManager = SettingsManager.Instance;
 
@@ -470,7 +474,16 @@ namespace BanterBrain_Buddy
         public async Task<string> GetOpenAIIGPTResponse(String UserInput, string tmpPersonaRoletext)
         {
             string gPTOutputText = "";
+            LastResponseError = "";
             _bBBlog.Info("Sending to OpenAI GPT LLM: " + UserInput);
+
+            //the SDK credential throws on an empty key, report it the same way as an API error
+            if (string.IsNullOrWhiteSpace(UserSettingsManager.Settings.GPTAPIKey))
+            {
+                LastResponseError = "No OpenAI API key is configured, set it in the settings form";
+                _bBBlog.Error(LastResponseError);
+                return gPTOutputText;
+            }
 
             _OpenAPI ??= new(UserSettingsManager.Settings.GPTAPIKey);
 
@@ -480,6 +493,9 @@ namespace BanterBrain_Buddy
 
             bool reasoningModel = IsReasoningModel(model);
             ChatCompletionOptions requestOptions = new();
+            //tells the retry below whether an effort went out with the request, the SDK property is
+            //an enum and cannot be read back as text
+            bool effortRequested = false;
             // reasoning models (gpt-5 and newer) reject a non default temperature and
             // manage their own output budget, so only apply these to the classic models
             if (!reasoningModel)
@@ -493,7 +509,8 @@ namespace BanterBrain_Buddy
                 //keeps the library default. The levels come from the model itself (see
                 //FetchReasoningEffortLevelsAsync), so send the chosen one as-is and let the API validate it
                 string reasoningEffort = UserSettingsManager.Settings.GPTReasoningEffortComboBox;
-                if (!string.IsNullOrEmpty(reasoningEffort) && !reasoningEffort.StartsWith("Auto", StringComparison.Ordinal))
+                effortRequested = !string.IsNullOrEmpty(reasoningEffort) && !reasoningEffort.StartsWith("Auto", StringComparison.Ordinal);
+                if (effortRequested)
                 {
 #pragma warning disable OPENAI001 // the SDK still flags the reasoning effort level as experimental
                     requestOptions.ReasoningEffortLevel = reasoningEffort.ToLowerInvariant();
@@ -511,57 +528,118 @@ namespace BanterBrain_Buddy
             messages.AddRange(_chatHistory);
             messages.Add(new UserChatMessage(UserInput));
 
-            try
+            //the answer is asked for at most twice, a reasoning effort that this particular model
+            //refuses is dropped and the very same request goes out again without it
+            for (int attempt = 1; attempt <= 2; attempt++)
             {
-                _bBBlog.Info("ChatGPT response: ");
-                AsyncCollectionResult<StreamingChatCompletionUpdate> completionUpdates = chatClient.CompleteChatStreamingAsync(messages, requestOptions);
-                ChatFinishReason? finishReason = null;
-                await foreach (StreamingChatCompletionUpdate completionUpdate in completionUpdates)
+                gPTOutputText = "";
+                try
                 {
-                    foreach (ChatMessageContentPart contentPart in completionUpdate.ContentUpdate)
+                    _bBBlog.Info("ChatGPT response: ");
+                    AsyncCollectionResult<StreamingChatCompletionUpdate> completionUpdates = chatClient.CompleteChatStreamingAsync(messages, requestOptions);
+                    ChatFinishReason? finishReason = null;
+                    await foreach (StreamingChatCompletionUpdate completionUpdate in completionUpdates)
                     {
-                        gPTOutputText += contentPart.Text;
+                        foreach (ChatMessageContentPart contentPart in completionUpdate.ContentUpdate)
+                        {
+                            gPTOutputText += contentPart.Text;
+                        }
+                        //the last update tells us why the model stopped generating
+                        if (completionUpdate.FinishReason != null)
+                            finishReason = completionUpdate.FinishReason;
                     }
-                    //the last update tells us why the model stopped generating
-                    if (completionUpdate.FinishReason != null)
-                        finishReason = completionUpdate.FinishReason;
+                    if (finishReason == ChatFinishReason.Length)
+                    {
+                        //the output cap was reached, posting half a sentence to a live stream reads
+                        //as a broken bot, so nothing is said and the setting is reported instead
+                        LastResponseError = $"The answer was cut off by the Max Tokens limit ({UserSettingsManager.Settings.GPTMaxTokens} tokens), raise Max Tokens in Settings.";
+                        _bBBlog.Error("GPT answer hit the output token limit (finish_reason: length), nothing is posted. " + LastResponseError);
+                        return null;
+                    }
+                    if (string.IsNullOrWhiteSpace(gPTOutputText))
+                    {
+                        //an empty answer is an error, returning "" here left the bot saying nothing and
+                        //crashing the chat post on an empty Twitch message body
+                        LastResponseError = $"GPT returned no answer content (finish_reason: {finishReason}). The model probably spent its whole budget on reasoning, raise Max Tokens or select another reasoning effort in Settings.";
+                        _bBBlog.Error(LastResponseError);
+                        return null;
+                    }
+                    //keep the conversation for context, the way the old Conversation object did
+                    _chatHistory.Add(new UserChatMessage(UserInput));
+                    _chatHistory.Add(new AssistantChatMessage(gPTOutputText));
+                    while (_chatHistory.Count > maxChatHistoryMessages)
+                    {
+                        _chatHistory.RemoveAt(0);
+                    }
+                    _bBBlog.Info(gPTOutputText);
+                    _bBBlog.Info("GPT Response done");
+                    return gPTOutputText;
                 }
-                if (finishReason == ChatFinishReason.Length)
+                catch (System.Security.Authentication.AuthenticationException ex)
                 {
-                    //output was cut off by the token limit, this is the usual cause of half sentences
-                    _bBBlog.Warn("GPT answer hit the output token limit (finish_reason: length). Raise Max Tokens in Settings.");
-                }
-                if (string.IsNullOrWhiteSpace(gPTOutputText))
-                {
-                    //an empty answer is an error, returning "" here left the bot saying nothing and
-                    //crashing the chat post on an empty Twitch message body
-                    _bBBlog.Error($"GPT returned no answer content (finish_reason: {finishReason}). The model probably spent its whole budget on reasoning. Enable 'No reasoning' in Settings or raise Max Tokens.");
+                    LastResponseError = "GPT authentication failed: " + ex.Message;
+                    _bBBlog.Error(LastResponseError);
                     return null;
                 }
-                //keep the conversation for context, the way the old Conversation object did
-                _chatHistory.Add(new UserChatMessage(UserInput));
-                _chatHistory.Add(new AssistantChatMessage(gPTOutputText));
-                while (_chatHistory.Count > maxChatHistoryMessages)
+                catch (ClientResultException ex)
                 {
-                    _chatHistory.RemoveAt(0);
+                    string providerError = $"HTTP {ex.Status}: {ex.Message ?? ""}";
+                    //an effort saved for another model can be refused here, retry without it
+                    if (attempt == 1 && effortRequested && IsModelEffortRejection(providerError))
+                    {
+                        _bBBlog.Warn($"GPT refuses the saved reasoning effort for {model}, retrying without it: {providerError}");
+#pragma warning disable OPENAI001 // the SDK still flags the reasoning effort level as experimental
+                        requestOptions.ReasoningEffortLevel = null;
+#pragma warning restore OPENAI001
+                        effortRequested = false;
+                        //the setting and the cached verdict of that model are both wrong now, the
+                        //next probe has to come from the API instead of offering it again
+                        UserSettingsManager.Settings.GPTReasoningEffortComboBox = "";
+                        if (UserSettingsManager.Settings.GPTReasoningLevelsCache != null)
+                        {
+                            UserSettingsManager.Settings.GPTReasoningLevelsCache.Remove(model);
+                        }
+                        UserSettingsManager.SaveSettings();
+                        continue;
+                    }
+                    //no dialog here, the caller reports LastResponseError once
+                    LastResponseError = $"GPT rejected the request ({providerError})";
+                    if (LastResponseError.Length > 300)
+                    {
+                        LastResponseError = LastResponseError.Substring(0, 300) + "...";
+                    }
+                    _bBBlog.Error("GPT API error: " + providerError);
+                    return null;
                 }
-                _bBBlog.Info(gPTOutputText);
-                _bBBlog.Info("GPT Response done");
-                return gPTOutputText;
             }
-            catch (System.Security.Authentication.AuthenticationException ex)
-            {
-                MessageBox.Show(ex.Message, "GPT API Auth error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                _bBBlog.Error("GPT API Auth error: " + ex.Message);
-                return null;
-            }
-            catch (ClientResultException ex)
-            {
-                MessageBox.Show(ex.Message, "GPT API error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                _bBBlog.Error("GPT API error: " + ex.Status + " " + ex.Message);
-                return null;
-            }
+            LastResponseError = "GPT returned no answer.";
+            _bBBlog.Error(LastResponseError);
+            return null;
+        }
 
+        // "Unsupported parameter: 'reasoning_effort' is not supported with this model" and
+        // "invalid <family> reasoning_effort" are the model speaking about the value, the schema
+        // error that lists every allowed value and a token budget complaint are not. Anything else
+        // keeps the value, hiding a working setting is the worse failure.
+        private static bool IsModelEffortRejection(string message)
+        {
+            if (string.IsNullOrEmpty(message))
+            {
+                return false;
+            }
+            if (!message.Contains("reasoning_effort", StringComparison.OrdinalIgnoreCase)
+                && !message.Contains("reasoning effort", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+            if (message.Contains("allowed values", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("Supported values", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("max_tokens", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("budget", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+            return true;
         }
 
         public void ChatGPTChatReset()

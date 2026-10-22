@@ -35,7 +35,7 @@ namespace BanterBrain_Buddy
 {
     public partial class BBB : Form
     {
-        private readonly static string Version = "1.0.8";
+        private readonly static string Version = "1.0.11";
 
         //set logger
         private static log4net.ILog _bBBlog;
@@ -87,7 +87,7 @@ namespace BanterBrain_Buddy
         private OpenAI _openAI;
         private Groq _groqLLM;
         private readonly List<Personas> _personas = [];
-        private TwitchLLMResponseLanguage TwitchLLMLanguage;
+        private TwitchLLMResponseLanguage TwitchLLMLanguage = new();
 
 
         private SettingsManager UserSettingsManager = SettingsManager.Instance;
@@ -103,7 +103,8 @@ namespace BanterBrain_Buddy
             _twitchValidateBotCheckStarted = false;
             InitializeComponent();
 
-            CheckForNewVersionAsync();
+            //fire and forget, the task handles all its own exceptions internally
+            _ = CheckForNewVersionAsync();
             SetLogger();
 
             ///update settings to the new format
@@ -118,7 +119,9 @@ namespace BanterBrain_Buddy
             _bBBlog.Info("BanterBrain Buddy version: " + Version);
             LoadLanguageStuff();
             SetupConfigFiles();
-            LoadPersonas();
+            //when no personas.json exists yet this only fills the boxes after an await, the
+            //first-install path in SetSelectedSTTProvider awaits a reload to cover that
+            _ = LoadPersonas();
             LoadTwitchNotableViewers();
             LoadTwitchLLMLanguageFile();
             _bBBlog.Info("Program Starting...");
@@ -568,7 +571,7 @@ namespace BanterBrain_Buddy
                     _bBBlog.Debug("Setting STT provider to default");
                     STTSelectedComboBox.SelectedIndex = 0;
                     //Oh, we in first install we should reload personas then too just to make sure the mainscreen persona dropdown is filled
-                    LoadPersonas();
+                    await LoadPersonas();
                     if (BroadcasterSelectedPersonaComboBox.SelectedIndex == -1)
                         BroadcasterSelectedPersonaComboBox.SelectedIndex = 0;
                 }
@@ -644,70 +647,88 @@ namespace BanterBrain_Buddy
                 using var sw = new StreamWriter(tmpFile, true);
                 sw.Write(tmpString);
             }
-            else
+            //load (also right after creating the file) so the combos are filled in both cases
+            _bBBlog.Debug("Loading personas into the main screen comboboxes.");
+            _personas.Clear();
+            BroadcasterSelectedPersonaComboBox.Items.Clear();
+            TwitchChatPersonaComboBox.Items.Clear();
+            TwitchChannelPointPersonaComboBox.Items.Clear();
+            TwitchCheeringPersonaComboBox.Items.Clear();
+            TwitchSubscriptionPersonaComboBox.Items.Clear();
+            using var sr = new StreamReader(tmpFile);
+            var tmpString2 = sr.ReadToEnd();
+            //var tmpPersonas = JsonConvert.DeserializeObject<List<Personas>>(tmpString);
+            var tmpPersonas = JsonConvert.DeserializeObject<List<Personas>>(tmpString2) ?? new List<Personas>();
+            foreach (var persona in tmpPersonas)
             {
-                _bBBlog.Debug("Personas file found, loading it.");
-                _personas.Clear();
-                BroadcasterSelectedPersonaComboBox.Items.Clear();
-                TwitchChatPersonaComboBox.Items.Clear();
-                TwitchChannelPointPersonaComboBox.Items.Clear();
-                TwitchCheeringPersonaComboBox.Items.Clear();
-                TwitchSubscriptionPersonaComboBox.Items.Clear();
-                using var sr = new StreamReader(tmpFile);
-                var tmpString = sr.ReadToEnd();
-                //var tmpPersonas = JsonConvert.DeserializeObject<List<Personas>>(tmpString);
-                var tmpPersonas = JsonConvert.DeserializeObject<List<Personas>>(tmpString) ?? new List<Personas>();
-                foreach (var persona in tmpPersonas)
-                {
-                    _bBBlog.Debug("Loading persona into available list: " + persona.Name);
-                    _personas.Add(persona);
-                    BroadcasterSelectedPersonaComboBox.Items.Add(persona.Name);
-                    TwitchChatPersonaComboBox.Items.Add(persona.Name);
-                    TwitchChannelPointPersonaComboBox.Items.Add(persona.Name);
-                    TwitchCheeringPersonaComboBox.Items.Add(persona.Name);
-                    TwitchSubscriptionPersonaComboBox.Items.Add(persona.Name);
+                _bBBlog.Debug("Loading persona into available list: " + persona.Name);
+                _personas.Add(persona);
+                BroadcasterSelectedPersonaComboBox.Items.Add(persona.Name);
+                TwitchChatPersonaComboBox.Items.Add(persona.Name);
+                TwitchChannelPointPersonaComboBox.Items.Add(persona.Name);
+                TwitchCheeringPersonaComboBox.Items.Add(persona.Name);
+                TwitchSubscriptionPersonaComboBox.Items.Add(persona.Name);
 
-                }
             }
         }
 
         //here we load the language file for the Twitch LLM responses that are intermediary
         [SupportedOSPlatform("windows10.0.10240")]
-        private async void LoadTwitchLLMLanguageFile()
+        private void LoadTwitchLLMLanguageFile()
         {
-            string sourcefolder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            string tmpFile;
-
-
-            if (UserSettingsManager.Settings.TwitchLLMLanguageComboBox != "Custom")
-                tmpFile = sourcefolder + $"\\TwitchLLMLanguageFiles\\{UserSettingsManager.Settings.TwitchLLMLanguageComboBox}.json";
-            else
+            try
             {
-                //we load from appdata, create it if it does not exist from English
-                tmpFile = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "\\BanterBrain\\CustomTwitchLLMLanguage.json";
+                string sourcefolder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                string tmpFile;
+
+
+                if (UserSettingsManager.Settings.TwitchLLMLanguageComboBox != "Custom")
+                    tmpFile = sourcefolder + $"\\TwitchLLMLanguageFiles\\{UserSettingsManager.Settings.TwitchLLMLanguageComboBox}.json";
+                else
+                {
+                    //we load from appdata, create it if it does not exist from English
+                    tmpFile = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "\\BanterBrain\\CustomTwitchLLMLanguage.json";
+                    if (!File.Exists(tmpFile))
+                    {
+                        _bBBlog.Debug("Twitch LLM custom language file not found, creating it from English");
+                        var englishTemplate = sourcefolder + "\\TwitchLLMLanguageFiles\\English.json";
+                        if (File.Exists(englishTemplate))
+                        {
+                            Directory.CreateDirectory(Path.GetDirectoryName(tmpFile));
+                            File.Copy(englishTemplate, tmpFile);
+                        }
+                    }
+                }
+                //a missing or renamed language file must not leave the handlers without any text
                 if (!File.Exists(tmpFile))
                 {
-                    _bBBlog.Debug("Twitch LLM language file not found, creating it from English");
-                    File.Copy(sourcefolder + $"\\TwitchLLMLanguageFiles\\English.json", tmpFile);
+                    _bBBlog.Error($"Twitch LLM language {UserSettingsManager.Settings.TwitchLLMLanguageComboBox} file not found, falling back to English!");
+                    UpdateTextLog($"Twitch LLM language {UserSettingsManager.Settings.TwitchLLMLanguageComboBox} file not found, falling back to English!\r\n");
+                    tmpFile = sourcefolder + "\\TwitchLLMLanguageFiles\\English.json";
                 }
-            }
-            if (!File.Exists(tmpFile))
-            {
-                _bBBlog.Error($"Twitch LLM language {UserSettingsManager.Settings.TwitchLLMLanguageComboBox} file not found, Error!");
-                UpdateTextLog($"Twitch LLM language {UserSettingsManager.Settings.TwitchLLMLanguageComboBox} file not found, Error!\r\n");
-                return;
-            }
-            else
-            {
-                _bBBlog.Debug($"Twitch LLM language {UserSettingsManager.Settings.TwitchLLMLanguageComboBox} file found, loading it.");
+                if (!File.Exists(tmpFile))
+                {
+                    _bBBlog.Error("Twitch LLM English language file not found either, using empty defaults!");
+                    UpdateTextLog("Twitch LLM English language file not found, using empty defaults!\r\n");
+                    return;
+                }
+
+                _bBBlog.Debug($"Twitch LLM language file found, loading it: {tmpFile}");
                 using var sr = new StreamReader(tmpFile);
                 var tmpString = sr.ReadToEnd();
-                //if this is the first time make the new class
-                TwitchLLMLanguage ??= new();
-                TwitchLLMLanguage = JsonConvert.DeserializeObject<TwitchLLMResponseLanguage>(tmpString);
+                //keep the current (empty default) language object when the file cannot be parsed
+                var tmpLanguage = JsonConvert.DeserializeObject<TwitchLLMResponseLanguage>(tmpString);
+                if (tmpLanguage != null)
+                    TwitchLLMLanguage = tmpLanguage;
+                else
+                    _bBBlog.Error("Twitch LLM language file parsed to null, keeping the previous language");
                 _bBBlog.Info($"Twitch LLM language file loaded with language: {TwitchLLMLanguage.Language}");
             }
-
+            catch (Exception ex)
+            {
+                //called from the constructor, a broken language file may never take down startup
+                _bBBlog.Error("Error loading Twitch LLM language file: " + ex.Message);
+            }
         }
 
 
@@ -1015,19 +1036,38 @@ namespace BanterBrain_Buddy
             _sTTOutputText = "";
             _openAI ??= new();
             _bBBlog.Info("Starting OpenAI STT from WAV");
-            _sTTOutputText = await _openAI.OpenAISTT(tmpWavFile);
-            if (_sTTOutputText == null)
+            try
             {
-                _bBBlog.Error("OpenAI STT failed");
+                _sTTOutputText = await _openAI.OpenAISTT(tmpWavFile);
+                if (_sTTOutputText == null)
+                {
+                    _bBBlog.Error("OpenAI STT failed");
+                    _bigError = true;
+                }
+                else
+                {
+                    _bBBlog.Info($"OpenAI STT done: {_sTTOutputText}");
+                }
+            }
+            catch (Exception ex)
+            {
+                //async void, nothing may escape. Flag the error so the waiting caller stops
+                _bBBlog.Error("OpenAI STT threw: " + ex.Message);
                 _bigError = true;
             }
-            else
+            finally
             {
-                _bBBlog.Info($"OpenAI STT done: {_sTTOutputText}");
+                _sTTDone = true;
+                _bBBlog.Debug($"Deleting temp wav file: {tmpWavFile}");
+                try
+                {
+                    File.Delete(tmpWavFile);
+                }
+                catch (Exception ex)
+                {
+                    _bBBlog.Warn("Could not delete temp wav file: " + ex.Message);
+                }
             }
-            _sTTDone = true;
-            _bBBlog.Debug($"Deleting temp wav file: {tmpWavFile}");
-            File.Delete(tmpWavFile);
         }
 
         [SupportedOSPlatform("windows10.0.10240")]
@@ -1037,20 +1077,39 @@ namespace BanterBrain_Buddy
             _sTTOutputText = "";
             NativeSpeech nativeSpeech = new();
             _bBBlog.Info("Starting Native STT from WAV");
-            _sTTOutputText = await nativeSpeech.NativeSpeechRecognizeStart(tmpWavFile);
-            if (_sTTOutputText == null)
+            try
             {
-                _bBBlog.Error("Native STT failed");
+                _sTTOutputText = await nativeSpeech.NativeSpeechRecognizeStart(tmpWavFile);
+                if (_sTTOutputText == null)
+                {
+                    _bBBlog.Error("Native STT failed");
+                    _bigError = true;
+                }
+                else
+                {
+                    _bBBlog.Info($"Native STT done: {_sTTOutputText}");
+                }
+            }
+            catch (Exception ex)
+            {
+                //async void, nothing may escape. Flag the error so the waiting caller stops
+                _bBBlog.Error("Native STT threw: " + ex.Message);
                 _bigError = true;
             }
-            else
+            finally
             {
-                _bBBlog.Info($"Native STT done: {_sTTOutputText}");
+                _sTTDone = true;
+                //now delete wav file
+                _bBBlog.Debug($"Deleting temp wav file: {tmpWavFile}");
+                try
+                {
+                    File.Delete(tmpWavFile);
+                }
+                catch (Exception ex)
+                {
+                    _bBBlog.Warn("Could not delete temp wav file: " + ex.Message);
+                }
             }
-            _sTTDone = true;
-            //now delete wav file
-            _bBBlog.Debug($"Deleting temp wav file: {tmpWavFile}");
-            File.Delete(tmpWavFile);
         }
 
         //play a wav file to the bots selected audio channel
@@ -1101,9 +1160,15 @@ namespace BanterBrain_Buddy
             var result = await _openAI.GetOpenAIIGPTResponse(UserInput, tmpPersonaRoletext);
             if (result == null)
             {
-                _bBBlog.Error("GPT API error. Is there a problem with your API key or subscription?");
-                UpdateTextLog("GPT returned no answer. Check the Max Tokens setting or enable 'Disable reasoning' in Settings.\r\n");
-                MessageBox.Show("GPT API error. Is there a problem with your API key or subscription?", "GPT API error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                //the wrapper knows what failed, its reason beats guessing at a key problem here
+                string reason = _openAI.LastResponseError;
+                if (string.IsNullOrEmpty(reason))
+                {
+                    reason = "GPT returned no answer. Check the Max Tokens setting or the reasoning effort in Settings.";
+                }
+                _bBBlog.Error("GPT chat failed: " + reason);
+                UpdateTextLog("GPT returned no answer: " + reason + "\r\n");
+                MessageBox.Show(reason, "GPT API error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 _bigError = true;
                 //make sure waiters on _gPTDone do not spin forever on a failed call
                 _gPTDone = true;
@@ -1128,9 +1193,15 @@ namespace BanterBrain_Buddy
             var result = await _groqLLM.GetGroqResponse(UserInput, tmpPersonaRoletext);
             if (result == null)
             {
-                _bBBlog.Error("Groq API error. Is there a problem with your API key or subscription?");
-                UpdateTextLog("Groq returned no answer. Check the Max Tokens setting in Settings.\r\n");
-                MessageBox.Show("Groq API error. Is there a problem with your API key or subscription?", "Groq API error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                //the wrapper knows what failed, its reason beats guessing at a key problem here
+                string reason = _groqLLM.LastResponseError;
+                if (string.IsNullOrEmpty(reason))
+                {
+                    reason = "Groq returned no answer. Check the Max Tokens setting or the reasoning effort in Settings.";
+                }
+                _bBBlog.Error("Groq chat failed: " + reason);
+                UpdateTextLog("Groq returned no answer: " + reason + "\r\n");
+                MessageBox.Show(reason, "Groq API error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 _bigError = true;
                 //make sure waiters on _gPTDone do not spin forever on a failed call
                 _gPTDone = true;
@@ -1468,11 +1539,20 @@ namespace BanterBrain_Buddy
                         _sTTOutputText = UserSettingsManager.Settings.StreamerNameTextBox + " says: " + _sTTOutputText;
                     }
 
-                    await TalkToLLM(_sTTOutputText, GetSelectedPersona(BroadcasterSelectedPersonaComboBox.Text).RoleText);
+                    //no personas loaded (broken personas.json) must not crash this async void handler
+                    var broadcasterPersona = GetSelectedPersona(BroadcasterSelectedPersonaComboBox.Text);
+                    if (broadcasterPersona == null)
+                    {
+                        _bBBlog.Error("No persona loaded, cannot converse. Check personas.json");
+                        UpdateTextLog("Error! No persona is loaded, check the personas file.\r\n");
+                        MainRecordingStart.Enabled = true;
+                        return;
+                    }
+
+                    await TalkToLLM(_sTTOutputText, broadcasterPersona.RoleText);
 
                     //this depends on the selected persona now
-                    //var tmpPersona = GetSelectedPersona(BroadcasterSelectedPersonaComboBox.Text);
-                    await SayText(_gPTOutputText, 0, GetSelectedPersona(BroadcasterSelectedPersonaComboBox.Text));
+                    await SayText(_gPTOutputText, 0, broadcasterPersona);
 
                 }
                 else
@@ -1545,6 +1625,8 @@ namespace BanterBrain_Buddy
                 //we should fill in the "sane" defaults at least before saving
                 settings.SetDefaultSettings();
                 settings.SaveSettings();
+                //without this the constructor busy-wait below never finishes on a fresh install
+                ConvertToNewSettings = true;
             }
         }
 
@@ -2283,12 +2365,14 @@ namespace BanterBrain_Buddy
 
             await InvokeUI(async () =>
             {
-                if (message.Length >= 1)
-                    await TalkToLLM(TwitchLLMLanguage.CheerTalkToLLM.Replace("{user}", user).Replace("{message}", message), GetSelectedPersona(UserSettingsManager.Settings.TwitchCheeringPersona).RoleText + notableUserFlavourText);
+                if (!string.IsNullOrEmpty(message) && message.Length >= 1)
+                    await TalkToLLM(TwitchLLMLanguage.CheerTalkToLLM.Replace("{user}", user).Replace("{message}", message), GetPersonaRoleTextOrDefault(UserSettingsManager.Settings.TwitchCheeringPersona) + notableUserFlavourText);
                 else
                 {
                     message = "no message";
                     _gPTOutputText = TwitchLLMLanguage.CheerDefaultNoMessage;
+                    //no LLM call happened, so the wait below must not spin forever
+                    _gPTDone = true;
                 }
 
                 //we have to await the GPT response, due to running this from another thread await alone is not enough.
@@ -2354,12 +2438,14 @@ namespace BanterBrain_Buddy
 
             await InvokeUI(async () =>
             {
-                if (message.Length >= 1)
-                    await TalkToLLM(TwitchLLMLanguage.ChannelPointTalkToLLM.Replace("{user}", user).Replace("{message}", message), GetSelectedPersona(UserSettingsManager.Settings.TwitchChannelPointPersona).RoleText + notableUserFlavourText);
+                if (!string.IsNullOrEmpty(message) && message.Length >= 1)
+                    await TalkToLLM(TwitchLLMLanguage.ChannelPointTalkToLLM.Replace("{user}", user).Replace("{message}", message), GetPersonaRoleTextOrDefault(UserSettingsManager.Settings.TwitchChannelPointPersona) + notableUserFlavourText);
                 else
                 {
                     message = "no message";
                     _gPTOutputText = TwitchLLMLanguage.ChannelPointDefaultNoMessage;
+                    //no LLM call happened, without this the wait below spins forever
+                    _gPTDone = true;
                 }
 
                 while (!_gPTDone)
@@ -2477,41 +2563,51 @@ namespace BanterBrain_Buddy
                 }
             }
 
-            if (message.Length >= 1)
+            //a resub without a message still has to be acknowledged, so the LLM part is optional
+            await InvokeUI(async () =>
             {
-                _gPTDone = false;
-                await InvokeUI(async () =>
+                bool hasMessage = !string.IsNullOrEmpty(message) && message.Length >= 1;
+                if (hasMessage)
                 {
-                    await TalkToLLM(TwitchLLMLanguage.SubscribeResubThanksWithMessageLLM.Replace("{user}", user).Replace("{message}", message), GetSelectedPersona(UserSettingsManager.Settings.TwitchSubscriptionPersona).RoleText + notableUserFlavourText);
+                    _gPTDone = false;
+                    await TalkToLLM(TwitchLLMLanguage.SubscribeResubThanksWithMessageLLM.Replace("{user}", user).Replace("{message}", message), GetPersonaRoleTextOrDefault(UserSettingsManager.Settings.TwitchSubscriptionPersona) + notableUserFlavourText);
+                }
+                else
+                {
+                    //no LLM call happened, so the wait below must not spin forever
+                    _gPTDone = true;
+                }
 
-                    //we have to await the GPT response, due to running this from another thread await alone is not enough.
-                    while (!_gPTDone)
+                //we have to await the GPT response, due to running this from another thread await alone is not enough.
+                while (!_gPTDone)
+                {
+                    await Task.Delay(500);
+                }
+
+                //do we need to play a sound?
+                if (TwitchSubscriptionSoundCheckBox.Checked)
+                {
+                    if (TwitchSubscriptionSoundTextBox.Text.Length > 1)
                     {
-                        await Task.Delay(500);
+                        _bBBlog.Info("Playing alert sound for subscription message");
+                        await PlayWaveFile(TwitchSubscriptionSoundTextBox.Text);
                     }
+                }
 
-                    //do we need to play a sound?
-                    if (TwitchSubscriptionSoundCheckBox.Checked)
+                //do we need to TTS everything?
+                if (TwitchSubscriptionTTSEverythingRadioButton.Checked)
+                {
+                    if (!hasMessage)
+                        await SayText(TwitchLLMLanguage.SubscribeMonthsNoMessage.Replace("{user}", user), 1000, GetSelectedPersona(UserSettingsManager.Settings.TwitchSubscriptionPersona));
+                    else
                     {
-                        if (TwitchSubscriptionSoundTextBox.Text.Length > 1)
-                        {
-                            _bBBlog.Info("Playing alert sound for subscription message");
-                            await PlayWaveFile(TwitchSubscriptionSoundTextBox.Text);
-                        }
+                        await SayText(TwitchLLMLanguage.SubscribeMonthsMessage.Replace("{user}", user).Replace("{message}", message), 1000, GetSelectedPersona(UserSettingsManager.Settings.TwitchSubscriptionPersona));
                     }
+                }
 
-                    //do we need to TTS everything?
-                    if (TwitchSubscriptionTTSEverythingRadioButton.Checked)
-                    {
-                        if (message.Length <= 1)
-                            await SayText(TwitchLLMLanguage.SubscribeMonthsNoMessage.Replace("{user}", user), 1000, GetSelectedPersona(UserSettingsManager.Settings.TwitchSubscriptionPersona));
-                        else
-                        {
-                            await SayText(TwitchLLMLanguage.SubscribeMonthsMessage.Replace("{user}", user).Replace("{message}", message), 1000, GetSelectedPersona(UserSettingsManager.Settings.TwitchSubscriptionPersona));
-                        }
-                    }
-
-                    //ok we waited, lets say the response, but we need a small delay to not sound unnatural   
+                //ok we waited, lets say the response, but we need a small delay to not sound unnatural   
+                if (hasMessage && !string.IsNullOrWhiteSpace(_gPTOutputText))
+                {
                     await SayText(_gPTOutputText, 0, GetSelectedPersona(UserSettingsManager.Settings.TwitchSubscriptionPersona));
                     _bBBlog.Info("LLM response said");
                     //do we need to post the response in chat?
@@ -2522,8 +2618,8 @@ namespace BanterBrain_Buddy
                         //then post the response
                         await _twitchEventSub.SendMessage(_gPTOutputText);
                     }
-                });
-            }
+                }
+            });
         }
 
 
@@ -2552,6 +2648,15 @@ namespace BanterBrain_Buddy
                 return ParseIntOrDefault(options[index], defaultValue);
             _bBBlog.Warn($"Persona VoiceOptions missing at index {index}, using default {defaultValue}");
             return defaultValue;
+        }
+
+        //safe read of a persona's role text, the Twitch event handlers run from lambdas on the UI
+        //thread where a null persona (empty personas list) must never throw
+        [SupportedOSPlatform("windows10.0.10240")]
+        private string GetPersonaRoleTextOrDefault(string personaName)
+        {
+            var persona = GetSelectedPersona(personaName);
+            return persona != null ? persona.RoleText : "";
         }
 
         //eventhandler for valid chat messages trigger
@@ -2586,7 +2691,7 @@ namespace BanterBrain_Buddy
             await InvokeUI(async () =>
             {
                 UpdateTextLog("Valid Twitch Chat message received from user: " + user + " message: " + message + ". Using trigger persona: " + UserSettingsManager.Settings.TwitchChatPersona + "\r\n");
-                await TalkToLLM(TwitchLLMLanguage.ChatMessageResponseLLM.Replace("{user}", user).Replace("{message}", message), GetSelectedPersona(UserSettingsManager.Settings.TwitchChatPersona).RoleText + notableUserFlavourText);
+                await TalkToLLM(TwitchLLMLanguage.ChatMessageResponseLLM.Replace("{user}", user).Replace("{message}", message), GetPersonaRoleTextOrDefault(UserSettingsManager.Settings.TwitchChatPersona) + notableUserFlavourText);
 
                 //we have to await the GPT response, due to running this from another thread await alone is not enough.
                 while (!_gPTDone)
@@ -2873,7 +2978,7 @@ namespace BanterBrain_Buddy
             if (_openAI != null)
                 _openAI.OpenAIAPIKey = UserSettingsManager.Settings.GPTAPIKey;
             STTSelectedComboBox.Items.Clear();
-            LoadPersonas();
+            await LoadPersonas();
             LoadTwitchLLMLanguageFile();
             await CheckConfiguredSTTProviders();
             await CheckConfiguredLLMProviders();
@@ -3135,8 +3240,8 @@ namespace BanterBrain_Buddy
         {
             if (BBBTabs.SelectedTab.Name.Equals("StreamingSettingsTab"))
             {
-                _bBBlog.Info("Twitch chat persona changed to: " + TwitchSubscriptionPersonaComboBox.Text);
-                UserSettingsManager.Settings.TwitchChatPersona = TwitchSubscriptionPersonaComboBox.Text;
+                _bBBlog.Info("Twitch subscription persona changed to: " + TwitchSubscriptionPersonaComboBox.Text);
+                UserSettingsManager.Settings.TwitchSubscriptionPersona = TwitchSubscriptionPersonaComboBox.Text;
                 UserSettingsManager.SaveSettings();
             }
         }
@@ -3146,8 +3251,8 @@ namespace BanterBrain_Buddy
         {
             if (BBBTabs.SelectedTab.Name.Equals("StreamingSettingsTab"))
             {
-                _bBBlog.Info("Twitch chat persona changed to: " + TwitchCheeringPersonaComboBox.Text);
-                UserSettingsManager.Settings.TwitchChatPersona = TwitchCheeringPersonaComboBox.Text;
+                _bBBlog.Info("Twitch cheering persona changed to: " + TwitchCheeringPersonaComboBox.Text);
+                UserSettingsManager.Settings.TwitchCheeringPersona = TwitchCheeringPersonaComboBox.Text;
                 UserSettingsManager.SaveSettings();
             }
         }
@@ -3157,8 +3262,8 @@ namespace BanterBrain_Buddy
         {
             if (BBBTabs.SelectedTab.Name.Equals("StreamingSettingsTab"))
             {
-                _bBBlog.Info("Twitch chat persona changed to: " + TwitchChannelPointPersonaComboBox.Text);
-                UserSettingsManager.Settings.TwitchChatPersona = TwitchChannelPointPersonaComboBox.Text;
+                _bBBlog.Info("Twitch channel point persona changed to: " + TwitchChannelPointPersonaComboBox.Text);
+                UserSettingsManager.Settings.TwitchChannelPointPersona = TwitchChannelPointPersonaComboBox.Text;
                 UserSettingsManager.SaveSettings();
             }
         }
@@ -3248,7 +3353,14 @@ namespace BanterBrain_Buddy
 
         private void TwitchChatSoundSelectButton_Click(object sender, EventArgs e)
         {
-            Process.Start("explorer.exe", Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) + "\\sounds");
+            try
+            {
+                Process.Start("explorer.exe", Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) + "\\sounds");
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("Could not open the sounds folder: " + ex.Message);
+            }
         }
 
         [SupportedOSPlatform("windows10.0.10240")]
@@ -3339,8 +3451,19 @@ namespace BanterBrain_Buddy
 
         private void LogfileDirectoryToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            _bBBlog.Debug("Opening log directory: " + UserSettingsManager.Settings.LogDir);
-            Process.Start("explorer.exe", UserSettingsManager.Settings.LogDir);
+            //the log dir can be empty on old settings files, fall back to the default location
+            string logDir = UserSettingsManager.Settings.LogDir;
+            if (string.IsNullOrWhiteSpace(logDir))
+                logDir = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "\\BanterBrain\\logs";
+            _bBBlog.Debug("Opening log directory: " + logDir);
+            try
+            {
+                Process.Start("explorer.exe", logDir);
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("Could not open the log folder: " + ex.Message);
+            }
         }
 
         [SupportedOSPlatform("windows10.0.10240")]

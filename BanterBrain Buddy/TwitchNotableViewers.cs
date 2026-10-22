@@ -112,6 +112,14 @@ namespace BanterBrain_Buddy
             TwitchFlavourTextBox.TextChanged -= TwitchFlavourTextBox_TextChanged;
             TwitchFlavourTextBox.Text = "";
 
+            //the combo can fire this with no selection (-1) or an empty list, indexing would throw
+            if (TwitchNotableViewersComboBox.SelectedIndex < 0 || TwitchNotableViewersComboBox.SelectedIndex >= viewers.Count)
+            {
+                _bBBlog.Debug("No valid viewer selected, nothing to load");
+                TwitchFlavourTextBox.TextChanged += TwitchFlavourTextBox_TextChanged;
+                return;
+            }
+
             //if there is a flavour text, load it into the textbox
             if (viewers[TwitchNotableViewersComboBox.SelectedIndex].FlavourText == null)
             {
@@ -306,8 +314,9 @@ namespace BanterBrain_Buddy
                 _bBBlog.Info("Flavour text is empty, not allowing to leave the combobox");
                 //show message
                 MessageBox.Show("Flavour text cannot be empty", "Error", MessageBoxButtons.OK);
-                //lets load the previous flavour text if there was any
-                if (viewers[TwitchNotableViewersComboBox.SelectedIndex] != null)
+                //lets load the previous flavour text if there was any, both indexes have to be valid
+                if (TwitchNotableViewersComboBox.SelectedIndex >= 0 && TwitchNotableViewersComboBox.SelectedIndex < viewers.Count
+                    && CurrSelectedViewerIndex >= 0 && CurrSelectedViewerIndex < viewers.Count)
                 {
                     TwitchFlavourTextBox.TextChanged -= TwitchFlavourTextBox_TextChanged;
                     TwitchFlavourTextBox.Text = viewers[CurrSelectedViewerIndex].FlavourText;

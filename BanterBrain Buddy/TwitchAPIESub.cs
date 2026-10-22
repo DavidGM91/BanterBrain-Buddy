@@ -76,6 +76,9 @@ namespace BanterBrain_Buddy
 
         private bool TwitchDoAutomatedCheck { get; set; }
 
+        //set when the websocket is stopped on purpose so the disconnect handler stops reconnecting
+        private bool _eventSubIntentionalStop { get; set; }
+
         private bool TwitchMock { get; set; }
 
         public bool EventSubReadChatMessages { get; private set; }
@@ -124,11 +127,30 @@ namespace BanterBrain_Buddy
 
             if (await ValidateAccessToken(TwitchAccessToken))
             {
-                var broadCaster = (await _gTwitchAPI.Helix.Users.GetUsersAsync(null, [TwChannelName])).Users;
-                var messageSender = (await _gTwitchAPI.Helix.Users.GetUsersAsync(null, [TwUsername])).Users;
-                TwitchUserID = messageSender[0].Id;
-                //this works great for validating
-                TwitchChannelID = broadCaster[0].Id;
+                try
+                {
+                    var broadCaster = (await _gTwitchAPI.Helix.Users.GetUsersAsync(null, [TwChannelName])).Users;
+                    var messageSender = (await _gTwitchAPI.Helix.Users.GetUsersAsync(null, [TwUsername])).Users;
+                    //a renamed or deleted account returns an empty list, indexing [0] would throw
+                    if (messageSender == null || messageSender.Length < 1)
+                    {
+                        _bBBlog.Error($"Twitch user {TwUsername} was not found, cannot initialize EventSub");
+                        return false;
+                    }
+                    if (broadCaster == null || broadCaster.Length < 1)
+                    {
+                        _bBBlog.Error($"Twitch channel {TwChannelName} was not found, cannot initialize EventSub");
+                        return false;
+                    }
+                    TwitchUserID = messageSender[0].Id;
+                    //this works great for validating
+                    TwitchChannelID = broadCaster[0].Id;
+                }
+                catch (Exception ex)
+                {
+                    _bBBlog.Error("Looking up Twitch users for EventSub init failed: " + ex.Message);
+                    return false;
+                }
                 //monitor channel ID, if the authorization user is not the same as the channel ID, we need to let the user know
                 if (TwitchUserID != TwitchChannelID)
                 {
@@ -306,12 +328,12 @@ namespace BanterBrain_Buddy
                 //await Task.Delay(300000);
                 if (!await ValidateAccessToken(TwitchAccessToken))
                 {
-                    //technically sensitive data, so we need to log this as an error, even if its invalid lets not log it
-                    _bBBlog.Error($"Hourly check! Access token {TwitchAccessToken} is invalid, please re-authenticate");
+                    //the token itself is sensitive, never write it to the log
+                    _bBBlog.Error("Hourly check! The access token is invalid, please re-authenticate");
                     return false;
                 }
                 else
-                    _bBBlog.Info($"Hourly check! Access Token {TwitchAccessToken} is validated and valid");
+                    _bBBlog.Info("Hourly check! The access token is validated and valid");
             }
             return true;
 ;
@@ -383,20 +405,28 @@ namespace BanterBrain_Buddy
         /// <returns>true if token valid, false if invalid</returns>
         public async Task<bool> ValidateAccessToken(string TwAuthToken)
         {
-
-            _gTwitchAPI.Settings.ClientId = TwitchAuthClientId;
-            _gTwitchAPI.Settings.AccessToken = TwAuthToken;
-            var validateTokenTest = await _gTwitchAPI.Auth.ValidateAccessTokenAsync(TwAuthToken);
-            if (validateTokenTest == null)
+            try
             {
-                _bBBlog.Error("Access token is invalid, please re-authenticate");
-                return false;
+                _gTwitchAPI.Settings.ClientId = TwitchAuthClientId;
+                _gTwitchAPI.Settings.AccessToken = TwAuthToken;
+                var validateTokenTest = await _gTwitchAPI.Auth.ValidateAccessTokenAsync(TwAuthToken);
+                if (validateTokenTest == null)
+                {
+                    _bBBlog.Error("Access token is invalid, please re-authenticate");
+                    return false;
+                }
+                else
+                {
+                    _bBBlog.Info("Access Token is validated and valid");
+                    TwitchAccessToken = TwAuthToken;
+                    return true;
+                }
             }
-            else
+            catch (Exception ex)
             {
-                _bBBlog.Info("Access Token is validated and valid");
-                TwitchAccessToken = TwAuthToken;
-                return true;
+                //a network hiccup is not the same as an invalid token but must not crash the caller
+                _bBBlog.Error("Validating the access token failed: " + ex.Message);
+                return false;
             }
         }
 
@@ -747,6 +777,8 @@ namespace BanterBrain_Buddy
 
         public async Task<bool> EventSubStartAsync()
         {
+            //a fresh start means automatic reconnecting is wanted again
+            _eventSubIntentionalStop = false;
             var result = await _eventSubWebsocketClient.ConnectAsync();
             if (result)
             {
@@ -764,6 +796,8 @@ namespace BanterBrain_Buddy
         //mock for testing see https://dev.twitch.tv/docs/cli/websocket-event-command/
         public async Task<bool> EventSubStartAsyncMock()
         {
+            //a fresh start means automatic reconnecting is wanted again
+            _eventSubIntentionalStop = false;
             //we just faking it ;)
             TwitchMock = true;
             var result = await _eventSubWebsocketClient.ConnectAsync(new Uri("ws://127.0.0.1:8080/ws"));
@@ -781,6 +815,8 @@ namespace BanterBrain_Buddy
 
         public async Task EventSubStopAsync()
         {
+            //tell the disconnect handler that this stop is on purpose, no reconnect wanted
+            _eventSubIntentionalStop = true;
             await _eventSubWebsocketClient.DisconnectAsync();
             _bBBlog.Info($"Websocket {_eventSubWebsocketClient.SessionId} manually stopped and disconnected.");
         }
@@ -811,24 +847,43 @@ namespace BanterBrain_Buddy
                 return false;
             }
 
+            //cheers and channel point redemptions can arrive without any text
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return false;
+            }
+
             //load the bad word filter into a list for checking
             //bad words are stored in a file in the appdata folder and are comma delimited
             var tmpFile = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "\\BanterBrain\\WordFilter.txt";
             var badWords = new List<string>();
-            if (File.Exists(tmpFile))
+            try
             {
-                using StreamReader r = new(tmpFile);
-                string line;
-                while ((line = r.ReadLine()) != null)
+                if (File.Exists(tmpFile))
                 {
-                    badWords.AddRange(line.Split(','));
+                    using StreamReader r = new(tmpFile);
+                    string line;
+                    while ((line = r.ReadLine()) != null)
+                    {
+                        badWords.AddRange(line.Split(','));
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("Could not read the word filter file, not filtering: " + ex.Message);
+                return false;
             }
             _bBBlog.Debug($"Bad words: {badWords.Count}");
             //now to see if the message contains any words or sentences found in the badWords list
             foreach (string word in badWords)
             {
-                if (message.Contains(word))
+                //an empty entry (stray comma in the file) matches EVERY message, skip those
+                if (string.IsNullOrWhiteSpace(word))
+                {
+                    continue;
+                }
+                if (message.Contains(word.Trim()))
                 {
                     _bBBlog.Info($"Message contains a bad word: {word}, ignoring");
                     return true;
@@ -1128,7 +1183,8 @@ namespace BanterBrain_Buddy
                 foreach (var sub in response.Subscriptions)
                 {
                     _bBBlog.Info($"Sub Type: {sub.Type} is {sub.Status} with {sub.Id}");
-                    _eventSubIllist.Add(type, sub.Id);
+                    //indexer instead of Add, re-subscribing to the same type would throw on a duplicate key
+                    _eventSubIllist[type] = sub.Id;
                 };
                 foreach (var item in _eventSubIllist)
                 {
@@ -1208,8 +1264,9 @@ namespace BanterBrain_Buddy
         {
             _bBBlog.Error($"Websocket {_eventSubWebsocketClient.SessionId} disconnected.");
 
-            // Don't do this in production. You should implement a better reconnect strategy
-            while (!await _eventSubWebsocketClient.ReconnectAsync())
+            //when the user stopped EventSub on purpose we must not reconnect in a loop, the old
+            //"while (!ReconnectAsync)" never ended and burned CPU even after an intentional stop
+            while (!_eventSubIntentionalStop && !await _eventSubWebsocketClient.ReconnectAsync())
             {
                 await Task.Delay(1000);
             }

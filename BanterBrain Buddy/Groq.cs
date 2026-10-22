@@ -34,6 +34,10 @@ namespace BanterBrain_Buddy
         private OpenAIClient _groqClient;
         private readonly List<ChatMessage> _chatHistory = new();
         public string GroqAPIKey { get; set; }
+        // why the last GetGroqResponse returned null, the caller shows this instead of guessing
+        // at a key or subscription problem, the wrapper knows whether it was the token budget,
+        // the reasoning effort or the server refusing the request
+        public string LastResponseError { get; private set; } = "";
 
         private SettingsManager UserSettingsManager = SettingsManager.Instance;
 
@@ -473,7 +477,16 @@ namespace BanterBrain_Buddy
         public async Task<string> GetGroqResponse(String UserInput, string tmpPersonaRoletext)
         {
             string groqOutputText = "";
+            LastResponseError = "";
             _bBBlog.Info("Sending to Groq LLM: " + UserInput);
+
+            //the SDK credential throws on an empty key, report it the same way as an API error
+            if (string.IsNullOrWhiteSpace(UserSettingsManager.Settings.GroqAPIKey))
+            {
+                LastResponseError = "No Groq API key is configured, set it in the settings form";
+                _bBBlog.Error(LastResponseError);
+                return groqOutputText;
+            }
 
             _groqClient ??= CreateGroqClient(UserSettingsManager.Settings.GroqAPIKey);
 
@@ -492,7 +505,8 @@ namespace BanterBrain_Buddy
             //The levels come from the model itself (see FetchReasoningEffortLevelsAsync),
             //so send the chosen one as-is and let the API validate it
             string reasoningEffort = UserSettingsManager.Settings.GroqReasoningEffortComboBox;
-            if (!string.IsNullOrEmpty(reasoningEffort) && !reasoningEffort.StartsWith("Auto", StringComparison.Ordinal))
+            bool effortRequested = !string.IsNullOrEmpty(reasoningEffort) && !reasoningEffort.StartsWith("Auto", StringComparison.Ordinal);
+            if (effortRequested)
             {
 #pragma warning disable OPENAI001 // the SDK still flags the reasoning effort level as experimental
                 requestOptions.ReasoningEffortLevel = reasoningEffort.ToLowerInvariant();
@@ -510,56 +524,90 @@ namespace BanterBrain_Buddy
             messages.AddRange(_chatHistory);
             messages.Add(new UserChatMessage(UserInput));
 
-            try
+            //the answer is asked for at most twice, a reasoning effort that this particular model
+            //refuses is dropped and the very same request goes out again without it
+            for (int attempt = 1; attempt <= 2; attempt++)
             {
-                _bBBlog.Info("Groq response: ");
-                AsyncCollectionResult<StreamingChatCompletionUpdate> completionUpdates = chatClient.CompleteChatStreamingAsync(messages, requestOptions);
-                ChatFinishReason? finishReason = null;
-                await foreach (StreamingChatCompletionUpdate completionUpdate in completionUpdates)
+                groqOutputText = "";
+                try
                 {
-                    foreach (ChatMessageContentPart contentPart in completionUpdate.ContentUpdate)
+                    _bBBlog.Info("Groq response: ");
+                    AsyncCollectionResult<StreamingChatCompletionUpdate> completionUpdates = chatClient.CompleteChatStreamingAsync(messages, requestOptions);
+                    ChatFinishReason? finishReason = null;
+                    await foreach (StreamingChatCompletionUpdate completionUpdate in completionUpdates)
                     {
-                        groqOutputText += contentPart.Text;
+                        foreach (ChatMessageContentPart contentPart in completionUpdate.ContentUpdate)
+                        {
+                            groqOutputText += contentPart.Text;
+                        }
+                        //the last update tells us why the model stopped generating
+                        if (completionUpdate.FinishReason != null)
+                            finishReason = completionUpdate.FinishReason;
                     }
-                    //the last update tells us why the model stopped generating
-                    if (completionUpdate.FinishReason != null)
-                        finishReason = completionUpdate.FinishReason;
+                    if (finishReason == ChatFinishReason.Length)
+                    {
+                        //the output cap was reached, posting half a sentence to a live stream reads
+                        //as a broken bot, so nothing is said and the setting is reported instead
+                        LastResponseError = $"The answer was cut off by the Max Tokens limit ({UserSettingsManager.Settings.GroqMaxTokens} tokens). A reasoning model spends part of that budget on thinking, so raise Max Tokens in Settings or pick a lower reasoning effort.";
+                        _bBBlog.Error("Groq answer hit the output token limit (finish_reason: length), nothing is posted. " + LastResponseError);
+                        return null;
+                    }
+                    if (string.IsNullOrWhiteSpace(groqOutputText))
+                    {
+                        //an empty answer is an error, returning "" here left the bot saying nothing and
+                        //crashing the chat post on an empty Twitch message body
+                        LastResponseError = $"Groq returned no answer content (finish_reason: {finishReason}). The model probably spent its whole budget on thinking, raise Max Tokens in Settings.";
+                        _bBBlog.Error(LastResponseError);
+                        return null;
+                    }
+                    //keep the conversation for context, the way the OpenAI wrapper does
+                    _chatHistory.Add(new UserChatMessage(UserInput));
+                    _chatHistory.Add(new AssistantChatMessage(groqOutputText));
+                    while (_chatHistory.Count > maxChatHistoryMessages)
+                    {
+                        _chatHistory.RemoveAt(0);
+                    }
+                    _bBBlog.Info(groqOutputText);
+                    _bBBlog.Info("Groq Response done");
+                    return groqOutputText;
                 }
-                if (finishReason == ChatFinishReason.Length)
+                catch (System.Security.Authentication.AuthenticationException ex)
                 {
-                    //output was cut off by the token limit, this is the usual cause of half sentences
-                    _bBBlog.Warn("Groq answer hit the output token limit (finish_reason: length). Raise Max Tokens in Settings.");
-                }
-                if (string.IsNullOrWhiteSpace(groqOutputText))
-                {
-                    //an empty answer is an error, returning "" here left the bot saying nothing and
-                    //crashing the chat post on an empty Twitch message body
-                    _bBBlog.Error($"Groq returned no answer content (finish_reason: {finishReason}).");
+                    LastResponseError = "Groq authentication failed: " + ex.Message;
+                    _bBBlog.Error(LastResponseError);
                     return null;
                 }
-                //keep the conversation for context, the way the OpenAI wrapper does
-                _chatHistory.Add(new UserChatMessage(UserInput));
-                _chatHistory.Add(new AssistantChatMessage(groqOutputText));
-                while (_chatHistory.Count > maxChatHistoryMessages)
+                catch (ClientResultException ex)
                 {
-                    _chatHistory.RemoveAt(0);
+                    string providerError = $"HTTP {ex.Status}: {ex.Message ?? ""}";
+                    //an effort saved for another model can be refused here, the model only checks
+                    //it once the value passes the global schema, so retry without it
+                    if (attempt == 1 && effortRequested && IsModelEffortRejection(providerError))
+                    {
+                        _bBBlog.Warn($"Groq refuses the saved reasoning effort for {model}, retrying without it: {providerError}");
+#pragma warning disable OPENAI001 // the SDK still flags the reasoning effort level as experimental
+                        requestOptions.ReasoningEffortLevel = null;
+#pragma warning restore OPENAI001
+                        effortRequested = false;
+                        //the setting and the cached verdict of that model are both wrong now, the
+                        //next probe has to come from the API instead of offering it again
+                        UserSettingsManager.Settings.GroqReasoningEffortComboBox = "";
+                        if (UserSettingsManager.Settings.GroqReasoningLevelsCache != null)
+                        {
+                            UserSettingsManager.Settings.GroqReasoningLevelsCache.Remove(model);
+                        }
+                        UserSettingsManager.SaveSettings();
+                        continue;
+                    }
+                    //no dialog here, the caller reports LastResponseError once
+                    LastResponseError = TruncateProbeMessage($"Groq rejected the request ({providerError})");
+                    _bBBlog.Error("Groq API error: " + providerError);
+                    return null;
                 }
-                _bBBlog.Info(groqOutputText);
-                _bBBlog.Info("Groq Response done");
-                return groqOutputText;
             }
-            catch (System.Security.Authentication.AuthenticationException ex)
-            {
-                MessageBox.Show(ex.Message, "Groq API Auth error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                _bBBlog.Error("Groq API Auth error: " + ex.Message);
-                return null;
-            }
-            catch (ClientResultException ex)
-            {
-                MessageBox.Show(ex.Message, "Groq API error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                _bBBlog.Error("Groq API error: " + ex.Status + " " + ex.Message);
-                return null;
-            }
+            LastResponseError = "Groq returned no answer.";
+            _bBBlog.Error(LastResponseError);
+            return null;
         }
 
         public void GroqChatReset()

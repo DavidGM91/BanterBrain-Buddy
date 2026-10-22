@@ -143,13 +143,43 @@ namespace BanterBrain_Buddy
             if (File.Exists(settingsFilePath))
             {
                 _bBBlog.Info("Appdata settings found. Loading settings from file");
-                var json = File.ReadAllText(settingsFilePath);
-                settings = JsonConvert.DeserializeObject<UserSettings>(json);
+                try
+                {
+                    var json = File.ReadAllText(settingsFilePath);
+                    settings = JsonConvert.DeserializeObject<UserSettings>(json);
+                    if (settings == null)
+                    {
+                        _bBBlog.Error("Settings file parsed to null, starting with fresh default settings");
+                        settings = new UserSettings();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    //a corrupt (or locked) settings file must never take down the Lazy singleton
+                    _bBBlog.Error("Could not read settings file, starting with fresh default settings: " + ex.Message);
+                    settings = new UserSettings();
+                }
             }
             else
             {
                 _bBBlog.Info("Appdata settings file not found, creating new settings object");
                 settings = new UserSettings();
+            }
+            HealNullStrings();
+        }
+
+        //older settings files can miss string properties entirely, code all over the app reads
+        //.Length / StartsWith on them, so a missing string is healed to empty right at the source
+        private void HealNullStrings()
+        {
+            settings ??= new UserSettings();
+            foreach (PropertyInfo property in typeof(UserSettings).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (property.PropertyType == typeof(string) && property.CanWrite && property.GetValue(settings) == null)
+                {
+                    _bBBlog.Debug($"Healing null setting '{property.Name}' to empty string");
+                    property.SetValue(settings, "");
+                }
             }
         }
 
@@ -216,8 +246,8 @@ namespace BanterBrain_Buddy
                 //Native 
                 settings.NativeSpeechRecognitionLanguageComboBox = "en-US";
 
-                //ollama
-                settings.OllamaURI = "https://localhost:11434";
+                //ollama. Ollama serves plain http locally, https makes the handshake fail
+                settings.OllamaURI = "http://localhost:11434";
                 settings.OllamaResponseLengthComboBox = "Normal";
                 settings.OllamaThinkingCheckBox = false;
                 settings.OllamaContextTokens = 0;

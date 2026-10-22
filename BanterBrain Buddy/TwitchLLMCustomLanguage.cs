@@ -213,6 +213,13 @@ namespace BanterBrain_Buddy
             var result = MessageBox.Show(" Do you want to save the custom language?", "Save Custom Language Settings", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (result == DialogResult.Yes)
             {
+                //when the initial load failed the class is null, saving would crash the FormClosing handler
+                if (TwitchLLMLanguage == null)
+                {
+                    _bBBlog.Error("No language loaded, cannot save the custom language");
+                    TwitchLLMTextChanged = false;
+                    return;
+                }
                 //we save the current language back into the class and then file
                 _bBBlog.Info("Saving current language settings");
                 TwitchLLMLanguage.CheerDefaultNoMessage = MinBitsNoMessageTextBox.Text;
@@ -233,9 +240,18 @@ namespace BanterBrain_Buddy
                 //save the class back to the custom language file
                 var tmpFile = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + "\\BanterBrain\\CustomTwitchLLMLanguage.json";
                 _bBBlog.Debug($"Twitch LLM language {UserSettingsManager.Settings.TwitchLLMLanguageComboBox} file found, saving it.");
-                Directory.CreateDirectory(Path.GetDirectoryName(tmpFile));
-                using var sw = new StreamWriter(tmpFile);
-                sw.Write(JsonConvert.SerializeObject(TwitchLLMLanguage));
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(tmpFile));
+                    using var sw = new StreamWriter(tmpFile);
+                    sw.Write(JsonConvert.SerializeObject(TwitchLLMLanguage));
+                }
+                catch (Exception ex)
+                {
+                    //a locked or unwritable file must not throw out of the closing event
+                    _bBBlog.Error("Could not save the custom language file: " + ex.Message);
+                    MessageBox.Show("Could not save the custom language file: " + ex.Message, "Twitch LLM Language", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
             }
             TwitchLLMTextChanged = false;
         }

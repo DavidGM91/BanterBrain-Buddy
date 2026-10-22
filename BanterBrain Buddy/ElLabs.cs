@@ -26,6 +26,11 @@ namespace BanterBrain_Buddy
 
         private void SetSelectedOutputDevice(string OutputDevice)
         {
+            if (string.IsNullOrEmpty(OutputDevice))
+            {
+                _bBBlog.Warn("No output device given for ElevenLabs TTS, using the default device");
+                return;
+            }
             _bBBlog.Info($"Setting selected output device for Native TTS to: {OutputDevice}");
             for (int i = 0; i < NAudio.Wave.WaveOut.DeviceCount; i++)
             {
@@ -64,8 +69,8 @@ namespace BanterBrain_Buddy
                 Style = style / 100f
             };
             // var voiceSettings = await api.VoicesEndpoint.GetDefaultVoiceSettingsAsync();
-            var editVoice = api.VoicesEndpoint.EditVoiceSettingsAsync(voiceId, voiceSettings);
-            if (editVoice.Result)
+            //await instead of .Result, blocking a UI thread context on an async call can deadlock
+            if (await api.VoicesEndpoint.EditVoiceSettingsAsync(voiceId, voiceSettings))
             {
                 _bBBlog.Info($"Voice settings updated for {voice.Name}");
             }
@@ -133,6 +138,11 @@ namespace BanterBrain_Buddy
             {
                 await Task.Delay(500);
             }
+            //release the audio device and streams, they were leaking on every spoken line
+            waveOut.Dispose();
+            waveStream.Dispose();
+            WavStream.Dispose();
+            ms.Dispose();
             return true;
         }
 
@@ -168,7 +178,8 @@ namespace BanterBrain_Buddy
                 // Process the voices...
                 foreach (var voice in voices)
                 {
-                    _elevenLabVoiceList.Add(voice.Name, voice.Id);
+                    //indexer not Add, ElevenLabs allows duplicate voice names and Add would throw
+                    _elevenLabVoiceList[voice.Name] = voice.Id;
                     ElevenLabVoices.Add(voice.Id + ";" + voice.Name);
                 }
                 return ElevenLabVoices;
