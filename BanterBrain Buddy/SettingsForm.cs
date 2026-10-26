@@ -412,6 +412,16 @@ namespace BanterBrain_Buddy
             //show the levels cached for the selected model first, a saved effort like "Xhigh" only
             //exists in that list and would silently fall back to Auto when it is applied afterwards
             ApplyCachedGroqReasoningLevels(GroqModelComboBox.Text);
+            if (UserSettingsManager.Settings.GroqVoiceModelListCache != null && UserSettingsManager.Settings.GroqVoiceModelListCache.Count > 0)
+            {
+                GroqVoiceModelComboBox.Items.Clear();
+                foreach (string vm in UserSettingsManager.Settings.GroqVoiceModelListCache)
+                {
+                    GroqVoiceModelComboBox.Items.Add(vm);
+                }
+            }
+            int groqVoiceIndex = GroqVoiceModelComboBox.FindStringExact(UserSettingsManager.Settings.GroqVoiceModel ?? "");
+            GroqVoiceModelComboBox.SelectedIndex = groqVoiceIndex >= 0 ? groqVoiceIndex : 0;
             //empty effort means "Auto (model default)"
             GroqReasoningComboBox.SelectedIndex = GroqReasoningComboBox.FindStringExact(UserSettingsManager.Settings.GroqReasoningEffortComboBox ?? "");
             if (GroqReasoningComboBox.SelectedIndex < 0)
@@ -598,6 +608,8 @@ namespace BanterBrain_Buddy
                 UserSettingsManager.Settings.GroqMaxTokens = ParseIntOrDefault(GroqMaxTokensTextBox.Text, UserSettingsManager.Settings.GroqMaxTokens);
             if (GroqTemperatureTextBox.Text.Length > 0)
                 UserSettingsManager.Settings.GroqTemperature = ParseFloatOrDefault(GroqTemperatureTextBox.Text, UserSettingsManager.Settings.GroqTemperature);
+            if (!string.IsNullOrEmpty(GroqVoiceModelComboBox.Text))
+                UserSettingsManager.Settings.GroqVoiceModel = GroqVoiceModelComboBox.Text;
             if (GoogleModelComboBox.Text.Length > 0)
                 UserSettingsManager.Settings.GoogleModel = GoogleModelComboBox.Text;
             if (GoogleAPIKeyTextBox.Text.Length > 0)
@@ -657,6 +669,8 @@ namespace BanterBrain_Buddy
                     TTSProviderComboBox.Items.Add("ElevenLabs");
                 if (GoogleAPIKeyTextBox.Text.Length > 0)
                     TTSProviderComboBox.Items.Add("Google AI");
+                if (GroqAPIKeyTextBox.Text.Length > 0)
+                    TTSProviderComboBox.Items.Add("Groq");
                 TTSProviderComboBox.SelectedIndex = 0;
 
                 _bBBlog.Debug("Personas panel visible. we need to load the persona's and enable the eventhandlers");
@@ -839,6 +853,43 @@ namespace BanterBrain_Buddy
                 TTSOutputVoice.Items.Add("Fenrir");
                 TTSOutputVoice.Items.Add("Aoede");
                 TTSOutputVoice.Items.Add("Zephyr");
+                TTSOutputVoice.Sorted = true;
+                PitchTrackBar.Enabled = false;
+                RateTrackBar.Value = 0;
+                RateTrackBar.Enabled = false;
+                TTSOutputVoice.Text = TTSOutputVoice.Items[0].ToString();
+                PitchTrackBar.Scroll -= PitchTrackBar_ScrollSnapToTen;
+                return true;
+            }
+            else if (TTSProviderComboBox.Text == "Groq")
+            {
+                TTSOutputVoice.Text = "";
+                TTSOption1Label.Text = "Voice Model";
+                TTSOption1Label.Visible = true;
+                TTSOutputVoiceOption1.Visible = true;
+                TTSOutputVoiceOption1.DropDownStyle = ComboBoxStyle.DropDownList;
+                TTSOutputVoiceOption1.Items.Clear();
+                TTSOutputVoiceOption1.Items.Add("Default (Settings)");
+                List<string> voiceModels = UserSettingsManager.Settings.GroqVoiceModelListCache;
+                if (voiceModels == null || voiceModels.Count == 0)
+                {
+                    voiceModels = new List<string>(Groq.DefaultVoiceModels);
+                }
+                foreach (string vm in voiceModels)
+                {
+                    TTSOutputVoiceOption1.Items.Add(vm);
+                }
+                TTSOutputVoiceOption1.SelectedIndex = 0;
+
+                TTSOutputVoiceOption2.Visible = false;
+                TTSOption2Label.Visible = false;
+                TTSOutputVoiceOption3.Visible = false;
+                TTSOption3Label.Visible = false;
+                TTSOutputVoice.Items.Clear();
+                foreach (string v in Groq.DefaultVoices)
+                {
+                    TTSOutputVoice.Items.Add(v);
+                }
                 TTSOutputVoice.Sorted = true;
                 PitchTrackBar.Enabled = false;
                 RateTrackBar.Value = 0;
@@ -1338,6 +1389,48 @@ namespace BanterBrain_Buddy
             else if (TTSProviderComboBox.Text == "Google AI" || TTSProviderComboBox.Text == "Google Gemini")
             {
                 await TTSGoogleAISpeakToOutput(TextToSay);
+            }
+            else if (TTSProviderComboBox.Text == "Groq")
+            {
+                await TTSGroqSpeakToOutput(TextToSay);
+            }
+        }
+
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async Task TTSGroqSpeakToOutput(string TextToSay)
+        {
+            string voiceModel = null;
+            if (TTSOutputVoiceOption1.Visible && TTSOutputVoiceOption1.SelectedIndex > 0)
+            {
+                voiceModel = TTSOutputVoiceOption1.Text;
+            }
+            Groq groq = new();
+            var result = await groq.GroqTTS(TextToSay, TTSAudioOutputComboBox.Text, TTSOutputVoice.Text, ParseIntOrDefault(TTSSpeedLevel.Text, 0), ParseIntOrDefault(TTSVoiceLevel.Text, 0), voiceModel);
+            if (!result)
+            {
+                string errorDetail = !string.IsNullOrEmpty(groq.LastResponseError) ? groq.LastResponseError : "Is there a problem with your API key or connection?";
+                _bBBlog.Error("Groq TTS error: " + errorDetail);
+                if (errorDetail.Contains("terms acceptance", StringComparison.OrdinalIgnoreCase))
+                {
+                    var urlMatch = System.Text.RegularExpressions.Regex.Match(errorDetail, @"https?://[^\s""'>]+");
+                    if (urlMatch.Success)
+                    {
+                        var choice = MessageBox.Show(errorDetail + "\n\nWould you like to open this link in your browser to accept the terms?", "Groq TTS Terms Required", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+                        if (choice == DialogResult.Yes)
+                        {
+                            try
+                            {
+                                Process.Start(new ProcessStartInfo(urlMatch.Value) { UseShellExecute = true });
+                            }
+                            catch (Exception ex)
+                            {
+                                _bBBlog.Error("Failed to open terms link in browser: " + ex.Message);
+                            }
+                        }
+                        return;
+                    }
+                }
+                MessageBox.Show("Groq TTS error: " + errorDetail, "Groq TTS error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -1871,7 +1964,7 @@ namespace BanterBrain_Buddy
                     TTSOutputVoiceOption2.Text = elevenOption2;
                     TTSOutputVoiceOption3.Text = elevenOption3;
                 }
-                if (TTSProviderComboBox.Text == "Google AI" || TTSProviderComboBox.Text == "Google Gemini")
+                if (TTSProviderComboBox.Text == "Google AI" || TTSProviderComboBox.Text == "Google Gemini" || TTSProviderComboBox.Text == "Groq")
                 {
                     int optIndex = TTSOutputVoiceOption1.FindStringExact(selectedPersona.VoiceOptions[0]);
                     TTSOutputVoiceOption1.SelectedIndex = optIndex >= 0 ? optIndex : 0;
@@ -2768,6 +2861,66 @@ namespace BanterBrain_Buddy
             finally
             {
                 GroqPanel.Enabled = true;
+            }
+        }
+
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async void GroqLoadVoiceModelsButton_Click(object sender, EventArgs e)
+        {
+            string apiKey = GroqAPIKeyTextBox.Text.Trim();
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                _bBBlog.Info("Groq voice model list load requested without an API key");
+                MessageBox.Show("Enter a Groq API key first", "Groq voice models", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            GroqLoadVoiceModelsButton.Enabled = false;
+            bool loaded = await RefreshGroqVoiceModelsFromAPIAsync(apiKey);
+            GroqLoadVoiceModelsButton.Enabled = true;
+            if (!loaded)
+            {
+                MessageBox.Show("Could not load the voice model list. Check the API key or your internet connection.", "Groq voice models", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            else
+            {
+                MessageBox.Show($"Loaded {GroqVoiceModelComboBox.Items.Count} Groq voice models.", "Groq voice models", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async Task<bool> RefreshGroqVoiceModelsFromAPIAsync(string apiKey)
+        {
+            try
+            {
+                List<string> voiceModels = await Groq.FetchVoiceModelNamesAsync(apiKey);
+                if (voiceModels.Count < 1)
+                {
+                    _bBBlog.Info("No Groq voice models fetched, keeping the built-in list");
+                    return false;
+                }
+                string previousSelection = GroqVoiceModelComboBox.Text;
+                GroqVoiceModelComboBox.Items.Clear();
+                foreach (string model in voiceModels)
+                {
+                    GroqVoiceModelComboBox.Items.Add(model);
+                }
+                int index = GroqVoiceModelComboBox.FindStringExact(previousSelection);
+                if (index < 0)
+                    index = GroqVoiceModelComboBox.FindStringExact(UserSettingsManager.Settings.GroqVoiceModel ?? "");
+                if (index >= 0)
+                    GroqVoiceModelComboBox.SelectedIndex = index;
+                else
+                    GroqVoiceModelComboBox.SelectedIndex = 0;
+                UserSettingsManager.Settings.GroqVoiceModel = GroqVoiceModelComboBox.Text;
+                UserSettingsManager.Settings.GroqVoiceModelListCache = voiceModels;
+                UserSettingsManager.SaveSettings();
+                _bBBlog.Info($"Loaded {voiceModels.Count} Groq voice models from the Groq API");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("Groq voice model fetch failed: " + ex.Message);
+                return false;
             }
         }
 

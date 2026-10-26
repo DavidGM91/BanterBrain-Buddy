@@ -1,9 +1,10 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Reflection;
 using System.Threading;
@@ -91,6 +92,8 @@ namespace BanterBrain_Buddy
         public bool EventSubCheckChannelPointRedemption { get; private set; }
 
         private readonly Dictionary<string, string> _eventSubIllist;
+        private readonly HashSet<string> _knownSubscriberUserIds = new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _knownSubscriberUserNames = new(StringComparer.OrdinalIgnoreCase);
 
         private Dictionary<string, string> _conditions;
 
@@ -534,13 +537,18 @@ namespace BanterBrain_Buddy
         //send split up message with delay to Twitch
         private async Task SendMessageWithDelay(string messageToSend, int delay)
         {
+            messageToSend = System.Text.RegularExpressions.Regex.Replace(messageToSend, @"[\r\n]+", " ").Trim();
             var parts = SplitMessage(messageToSend, 254);
             foreach (var part in parts)
             {
                 try
                 {
                     _bBBlog.Info($"Sending message: {part} to channel {TwitchChannelID} from user {TwitchChatUserID}");
-                    await _gTwitchAPI.Helix.Chat.SendChatMessage(TwitchChannelID, TwitchChatUserID, part, null, TwitchChatAccessToken);
+                    var response = await _gTwitchAPI.Helix.Chat.SendChatMessage(TwitchChannelID, TwitchChatUserID, part, null, TwitchChatAccessToken);
+                    if (response?.Data != null && response.Data.Length > 0 && !response.Data[0].IsSent)
+                    {
+                        _bBBlog.Warn($"Twitch chat message part was dropped: Code={response.Data[0].DropReason?.Code}, Reason={response.Data[0].DropReason?.Message}");
+                    }
                     await Task.Delay(delay);
                 }
                 catch (TwitchLib.Api.Core.Exceptions.TooManyRequestsException exception)
@@ -620,6 +628,9 @@ namespace BanterBrain_Buddy
                 _bBBlog.Error("No chat access token set, cannot send message");
                 return false;
             }
+            // Twitch Helix Chat rejects any message with newlines; flatten linebreaks to spaces
+            messageToSend = System.Text.RegularExpressions.Regex.Replace(messageToSend, @"[\r\n]+", " ").Trim();
+
             _bBBlog.Info($"Sending to channel {TwitchChannelID} from user {TwitchChatUserID}. Message: {messageToSend}");
 
             //if this message is longer than 255 characters we need to split it up
@@ -644,7 +655,16 @@ namespace BanterBrain_Buddy
                 _bBBlog.Info("Message is shorter than 255 characters, sending it");
                 try
                 {
-                    await _gTwitchAPI.Helix.Chat.SendChatMessage(TwitchChannelID, TwitchChatUserID, messageToSend, null, TwitchChatAccessToken);
+                    var response = await _gTwitchAPI.Helix.Chat.SendChatMessage(TwitchChannelID, TwitchChatUserID, messageToSend, null, TwitchChatAccessToken);
+                    if (response?.Data != null && response.Data.Length > 0)
+                    {
+                        if (!response.Data[0].IsSent)
+                        {
+                            _bBBlog.Warn($"Twitch chat message was dropped: Code={response.Data[0].DropReason?.Code}, Reason={response.Data[0].DropReason?.Message}");
+                            return false;
+                        }
+                        _bBBlog.Info($"Twitch message sent successfully (Id: {response.Data[0].MessageId})");
+                    }
                     return true;
                 }
                 catch (TwitchLib.Api.Core.Exceptions.TooManyRequestsException exception)
@@ -883,9 +903,14 @@ namespace BanterBrain_Buddy
                 {
                     continue;
                 }
-                if (message.Contains(word.Trim()))
+                string trimmed = word.Trim();
+                // Match with word boundaries to avoid false positives (e.g. 'ass' matching 'classic' or 'grass')
+                string pattern = (char.IsLetterOrDigit(trimmed[0]) ? @"\b" : "") +
+                                 System.Text.RegularExpressions.Regex.Escape(trimmed) +
+                                 (char.IsLetterOrDigit(trimmed[^1]) ? @"\b" : "");
+                if (System.Text.RegularExpressions.Regex.IsMatch(message, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                 {
-                    _bBBlog.Info($"Message contains a bad word: {word}, ignoring");
+                    _bBBlog.Info($"Message contains a bad word: {trimmed}, ignoring");
                     return true;
                 }
             }
@@ -898,74 +923,84 @@ namespace BanterBrain_Buddy
             //This receives: string command, int delay, bool follower, bool subscriber
             private async Task EventSubOnChannelChatMessage(ChannelChatMessageArgs e, string command, bool follower, bool subscriber)
         {
-            bool tmpFol = follower;
+            var eventData = e?.Notification?.Payload?.Event;
+            if (eventData?.Message?.Text == null)
+            {
+                return;
+            }
+
+            // The command must start with the configured prefix
+            if (!eventData.Message.Text.StartsWith(command, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             _bBBlog.Debug($"Chat message websocket {_eventSubWebsocketClient.SessionId}");
-            //if the command is still on timeout, ignore else set it to true
+            _bBBlog.Debug($"{eventData.ChatterUserName} said {eventData.Message.Text} in {eventData.BroadcasterUserName}'s chat.");
+
+            // If the command is still on cooldown/timeout, ignore
             if (IsCommandTriggered)
             {
                 _bBBlog.Info("Command trigger is still on timeout, ignoring");
                 return;
             }
 
-            var eventData = e.Notification.Payload.Event;
-
-            _bBBlog.Debug($"{eventData.ChatterUserName} said {eventData.Message.Text} in {eventData.BroadcasterUserName}'s chat.");
+            // Check if the command contains a filtered/banned word
             if (CheckMessageForFilteredWords(eventData.Message.Text))
             {
-                _bBBlog.Info($"{eventData.ChatterUserName} said a bad word, ignoring");
+                _bBBlog.Info($"{eventData.ChatterUserName} said a bad word with command, responding and ignoring");
+                await SendMessage($"@{eventData.ChatterUserName}, you used a banned word.");
                 return;
             }
 
-            //TODO: check for the command and then trigger the bot if its the right command and delay has been passed since bot was triggered last
-            //we need to also check if the user is a follower or subscriber if that is set
-            //also we should check when last time bot was triggered
-            if (eventData.Message.Text.StartsWith(command, StringComparison.OrdinalIgnoreCase))
+            _bBBlog.Info($"{eventData.ChatterUserName} triggered the bot with command {command}");
+            IsCommandTriggered = true;
+
+            //user needs to be a subscriber but is not
+            _bBBlog.Debug($"{eventData.ChatterUserName} issubscriber: {eventData.IsSubscriber}");
+            if (subscriber)
             {
-                _bBBlog.Info($"{eventData.ChatterUserName} triggered the bot with command {command}");
-                IsCommandTriggered = true;
-                //if this does not work we need to, when starting, request all follows and store them in a list and kee it updated
-                //var result = await _gTwitchAPI.Helix.Channels.GetChannelFollowersAsync(TwitchChannelID, eventData.ChatterUserId);
+                bool isSub = eventData.IsSubscriber
+                    || (eventData.Badges != null && eventData.Badges.Any(b => string.Equals(b.SetId, "subscriber", StringComparison.OrdinalIgnoreCase) || string.Equals(b.SetId, "founder", StringComparison.OrdinalIgnoreCase)))
+                    || (!string.IsNullOrEmpty(eventData.ChatterUserId) && _knownSubscriberUserIds.Contains(eventData.ChatterUserId))
+                    || (!string.IsNullOrEmpty(eventData.ChatterUserName) && _knownSubscriberUserNames.Contains(eventData.ChatterUserName));
 
-               // _bBBlog.Info($"Followerscheck length: {result.Data.Length} channel: {TwitchChannelID} chatter: {eventData.ChatterUserId}");
-
-                //user needs to be a subscriber but is not
-                _bBBlog.Debug($"{eventData.ChatterUserName} issubscriber: {eventData.IsSubscriber}");
-                if (subscriber)
+                if (!isSub && !eventData.IsBroadcaster)
                 {
-                    if (!eventData.IsSubscriber && !eventData.IsBroadcaster)
-                    {
-                        _bBBlog.Info($"{eventData.ChatterUserName} is not a subscriber, but the command requires it. Not going to execute.");
-                        IsCommandTriggered = false;
-                        return;
-                    }
-                    else if (eventData.IsSubscriber)
-                    {
-                        _bBBlog.Info($"{eventData.ChatterUserName} is a subscriber and the command requires it, executing!");
-                    }
-                    else if (eventData.IsBroadcaster)
-                    {
-                        _bBBlog.Info($"{eventData.ChatterUserName} is not a subscriber but is a broadcaster so its allowed");
-                    }
-                } else
-                {
-                    _bBBlog.Info($"{eventData.ChatterUserName} is not a subscriber, but the command does not require it. Executing!");
+                    // Check Twitch Helix API as fallback in case chatter just subscribed without refreshing their chat session or hid badge
+                    isSub = await CheckUserIsSubscribed(eventData.ChatterUserId, eventData.ChatterUserName);
                 }
 
-                if (OnESubChatMessage == null)
+                if (!isSub && !eventData.IsBroadcaster)
                 {
-                    _bBBlog.Debug("Chat trigger is null, no eventhandler set. Cannot continue");
+                    _bBBlog.Info($"{eventData.ChatterUserName} is not a subscriber, but the command requires it. Not going to execute.");
+                    IsCommandTriggered = false;
+                    await SendMessage($"@{eventData.ChatterUserName}, you need to be subscribed to use this command.");
                     return;
                 }
-
-                //Define the eventhandlers for being able to be thrown back to the main form
-                OnESubChatMessage(this, new TwitchEventhandlers.OnChatEventArgs(eventData.ChatterUserName, eventData.Message.Text));
-
-
-                //We need to set a delay before the bot can be triggered again, waiting delay seconds 
-                //not sure if this works ;)
-                _bBBlog.Debug($"Disabling eventhandler for chatmessage");
-                
+                else if (isSub)
+                {
+                    _bBBlog.Info($"{eventData.ChatterUserName} is a subscriber and the command requires it, executing!");
+                }
+                else if (eventData.IsBroadcaster)
+                {
+                    _bBBlog.Info($"{eventData.ChatterUserName} is not a subscriber but is a broadcaster so its allowed");
+                }
+            } else
+            {
+                _bBBlog.Info($"{eventData.ChatterUserName} is not a subscriber, but the command does not require it. Executing!");
             }
+
+            if (OnESubChatMessage == null)
+            {
+                _bBBlog.Debug("Chat trigger is null, no eventhandler set. Cannot continue");
+                IsCommandTriggered = false;
+                return;
+            }
+
+            //Define the eventhandlers for being able to be thrown back to the main form
+            OnESubChatMessage(this, new TwitchEventhandlers.OnChatEventArgs(eventData.ChatterUserName, eventData.Message.Text));
+            _bBBlog.Debug($"Disabling eventhandler for chatmessage");
         }
 
         public async Task EventSubEnableChatMessageHandlerAfterDelay(int delay)
@@ -977,6 +1012,40 @@ namespace BanterBrain_Buddy
             {
                 await SendMessageWithDelay(UserSettingsManager.Settings.TwitchDelayMessageTextBox, 1000);
             }
+        }
+
+        private async Task<bool> CheckUserIsSubscribed(string chatterUserId, string chatterUserName)
+        {
+            if (string.IsNullOrWhiteSpace(chatterUserId) || string.IsNullOrWhiteSpace(TwitchChannelID) || string.IsNullOrWhiteSpace(TwitchAccessToken) || TwitchMock)
+            {
+                return false;
+            }
+
+            try
+            {
+                _bBBlog.Info($"Checking Twitch Helix API for subscription status of {chatterUserName} (id: {chatterUserId}) in channel {TwitchChannelID}");
+                var subCheck = await _gTwitchAPI.Helix.Subscriptions.GetUserSubscriptionsAsync(TwitchChannelID, [chatterUserId], TwitchAccessToken);
+                if (subCheck?.Data != null && subCheck.Data.Length > 0)
+                {
+                    _bBBlog.Info($"User {chatterUserName} (id: {chatterUserId}) confirmed as active subscriber via Twitch API");
+                    _knownSubscriberUserIds.Add(chatterUserId);
+                    if (!string.IsNullOrEmpty(chatterUserName))
+                    {
+                        _knownSubscriberUserNames.Add(chatterUserName);
+                    }
+                    return true;
+                }
+                else
+                {
+                    _bBBlog.Info($"Twitch Helix API confirmed user {chatterUserName} (id: {chatterUserId}) has no active subscription");
+                }
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error($"Failed checking subscription via Twitch Helix API for user {chatterUserName} ({chatterUserId}): {ex.Message}");
+            }
+
+            return false;
         }
 
         //eventhandler for checking cheers and amoun tof min bits
@@ -1025,6 +1094,14 @@ namespace BanterBrain_Buddy
                 message = eventData.Message.Text;
 
             _bBBlog.Info($"{eventData.UserName} re-subscribed to {eventData.BroadcasterUserName} for {eventData.CumulativeMonths} months with message {eventData.Message}");
+            if (!string.IsNullOrEmpty(eventData.UserId))
+            {
+                _knownSubscriberUserIds.Add(eventData.UserId);
+            }
+            if (!string.IsNullOrEmpty(eventData.UserName))
+            {
+                _knownSubscriberUserNames.Add(eventData.UserName);
+            }
 
             //check for bad words   
             if (CheckMessageForFilteredWords(message))
@@ -1050,6 +1127,14 @@ namespace BanterBrain_Buddy
             _bBBlog.Debug($"Subscriber websocket {_eventSubWebsocketClient.SessionId}");
             var eventData = e.Notification.Payload.Event;
             _bBBlog.Info($"{eventData.UserName} subscribed to {eventData.BroadcasterUserName}");
+            if (!string.IsNullOrEmpty(eventData.UserId))
+            {
+                _knownSubscriberUserIds.Add(eventData.UserId);
+            }
+            if (!string.IsNullOrEmpty(eventData.UserName))
+            {
+                _knownSubscriberUserNames.Add(eventData.UserName);
+            }
             if (OnESubSubscribe == null)
             {
                 _bBBlog.Debug("Subscriber trigger is null, no eventhandler set. Cannot continue");

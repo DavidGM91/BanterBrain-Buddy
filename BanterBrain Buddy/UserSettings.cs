@@ -89,6 +89,9 @@ namespace BanterBrain_Buddy
         public List<string> GroqModelListCache { get; set; }
         //reasoning effort levels per Groq model, an empty list caches "no reasoning settings"
         public Dictionary<string, List<string>> GroqReasoningLevelsCache { get; set; }
+        public string GroqVoiceModel { get; set; }
+        //last voice model list fetched from Groq
+        public List<string> GroqVoiceModelListCache { get; set; }
         //Google AI (Gemini OpenAI compatible chat API)
         public string GoogleAPIKey { get; set; }
         public string GoogleModel { get; set; }
@@ -268,10 +271,12 @@ namespace BanterBrain_Buddy
 
                 //Groq
                 settings.GroqModel = "llama-3.1-8b-instant";
+                settings.GroqVoiceModel = "canopylabs/orpheus-v1-english";
                 settings.GroqTemperature = 0.5f;
                 settings.GroqMaxTokens = 100;
                 settings.GroqReasoningEffortComboBox = "";
                 settings.GroqModelListCache = new List<string>();
+                settings.GroqVoiceModelListCache = new List<string>();
                 settings.GroqReasoningLevelsCache = new Dictionary<string, List<string>>();
 
                 //Google AI / Gemini

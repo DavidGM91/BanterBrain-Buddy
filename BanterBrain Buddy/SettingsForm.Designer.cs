@@ -195,6 +195,9 @@ namespace BanterBrain_Buddy
             GroqReasoningComboBox = new System.Windows.Forms.ComboBox();
             GroqReasoningLoadButton = new System.Windows.Forms.Button();
             GroqReasoningLabel = new System.Windows.Forms.Label();
+            GroqVoiceModelLabel = new System.Windows.Forms.Label();
+            GroqVoiceModelComboBox = new System.Windows.Forms.ComboBox();
+            GroqLoadVoiceModelsButton = new System.Windows.Forms.Button();
             GroqTestSettingsButton = new System.Windows.Forms.Button();
             GooglePanel = new System.Windows.Forms.Panel();
             GoogleMaxTokensTextBox = new System.Windows.Forms.TextBox();
@@ -1794,6 +1797,9 @@ namespace BanterBrain_Buddy
             // 
             // GroqPanel
             // 
+            GroqPanel.Controls.Add(GroqVoiceModelComboBox);
+            GroqPanel.Controls.Add(GroqVoiceModelLabel);
+            GroqPanel.Controls.Add(GroqLoadVoiceModelsButton);
             GroqPanel.Controls.Add(GroqReasoningComboBox);
             GroqPanel.Controls.Add(GroqReasoningLoadButton);
             GroqPanel.Controls.Add(GroqReasoningLabel);
@@ -1969,6 +1975,42 @@ namespace BanterBrain_Buddy
             GroqReasoningLoadButton.UseVisualStyleBackColor = true;
             GroqReasoningLoadButton.Click += GroqReasoningLoadButton_Click;
             BBBToolTip.SetToolTip(GroqReasoningLoadButton, "Fills the reasoning effort list with the levels supported by the selected Groq model.");
+            // 
+            // GroqVoiceModelLabel
+            // 
+            GroqVoiceModelLabel.AutoSize = true;
+            GroqVoiceModelLabel.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GroqVoiceModelLabel.Location = new System.Drawing.Point(37, 211);
+            GroqVoiceModelLabel.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            GroqVoiceModelLabel.Name = "GroqVoiceModelLabel";
+            GroqVoiceModelLabel.Size = new System.Drawing.Size(73, 15);
+            GroqVoiceModelLabel.TabIndex = 45;
+            GroqVoiceModelLabel.Text = "Voice Model";
+            // 
+            // GroqVoiceModelComboBox
+            // 
+            GroqVoiceModelComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            GroqVoiceModelComboBox.FormattingEnabled = true;
+            GroqVoiceModelComboBox.Items.AddRange(new object[] { "canopylabs/orpheus-v1-english", "canopylabs/orpheus-arabic-saudi" });
+            GroqVoiceModelComboBox.Location = new System.Drawing.Point(183, 208);
+            GroqVoiceModelComboBox.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GroqVoiceModelComboBox.Name = "GroqVoiceModelComboBox";
+            GroqVoiceModelComboBox.Size = new System.Drawing.Size(224, 23);
+            GroqVoiceModelComboBox.TabIndex = 46;
+            BBBToolTip.SetToolTip(GroqVoiceModelComboBox, "Selects the Groq model used for text-to-speech audio generation.");
+            // 
+            // GroqLoadVoiceModelsButton
+            // 
+            GroqLoadVoiceModelsButton.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GroqLoadVoiceModelsButton.Location = new System.Drawing.Point(437, 206);
+            GroqLoadVoiceModelsButton.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GroqLoadVoiceModelsButton.Name = "GroqLoadVoiceModelsButton";
+            GroqLoadVoiceModelsButton.Size = new System.Drawing.Size(120, 27);
+            GroqLoadVoiceModelsButton.TabIndex = 47;
+            GroqLoadVoiceModelsButton.Text = "Load voice models";
+            GroqLoadVoiceModelsButton.UseVisualStyleBackColor = true;
+            GroqLoadVoiceModelsButton.Click += GroqLoadVoiceModelsButton_Click;
+            BBBToolTip.SetToolTip(GroqLoadVoiceModelsButton, "Pulls the TTS model list for your Groq key into the selector.");
             // 
             // GroqTestSettingsButton
             // 
@@ -2371,6 +2413,9 @@ namespace BanterBrain_Buddy
         private System.Windows.Forms.Label GroqReasoningLabel;
         private System.Windows.Forms.ComboBox GroqReasoningComboBox;
         private System.Windows.Forms.Button GroqReasoningLoadButton;
+        private System.Windows.Forms.Label GroqVoiceModelLabel;
+        private System.Windows.Forms.ComboBox GroqVoiceModelComboBox;
+        private System.Windows.Forms.Button GroqLoadVoiceModelsButton;
         private System.Windows.Forms.Button GroqTestSettingsButton;
         private System.Windows.Forms.Panel GooglePanel;
         private System.Windows.Forms.Label label36;

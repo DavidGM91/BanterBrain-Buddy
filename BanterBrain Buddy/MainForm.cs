@@ -35,7 +35,7 @@ namespace BanterBrain_Buddy
 {
     public partial class BBB : Form
     {
-        private readonly static string Version = "1.0.12";
+        private readonly static string Version = "1.0.13";
 
         //set logger
         private static log4net.ILog _bBBlog;
@@ -1385,6 +1385,10 @@ namespace BanterBrain_Buddy
             {
                 await TTSGoogleAISpeakToOutput(TextToSay, tmpPersona);
             }
+            else if (tmpPersona.VoiceProvider == "Groq")
+            {
+                await TTSGroqSpeakToOutput(TextToSay, tmpPersona);
+            }
 
             await Task.Delay(DelayWhenDone);
             _tTSSpeaking = false;
@@ -1505,6 +1509,47 @@ namespace BanterBrain_Buddy
             {
                 _bBBlog.Info("Google AI TTS done");
                 UpdateTextLog("Google AI TTS done\r\n");
+            }
+            MainRecordingStart.Enabled = true;
+        }
+
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async Task TTSGroqSpeakToOutput(string TextToSpeak, Personas tmpPersona)
+        {
+            if (UserSettingsManager.Settings.GroqAPIKey.Length < 1)
+            {
+                _bBBlog.Error("Groq TTS error. No API key found but this persona uses it. Please check your settings");
+                UpdateTextLog("Groq TTS error. No API key found but this persona uses it. Please check your settings\r\n");
+                MainRecordingStart.Enabled = true;
+                return;
+            }
+            UpdateTextLog("Saying text with Groq TTS\r\n");
+            _bBBlog.Info("Saying text with Groq TTS");
+            _groqLLM ??= new();
+            if (!await _groqLLM.GroqCheckAPIKey())
+            {
+                _bBBlog.Error("Groq TTS error. Is there a problem with your API key?");
+                MessageBox.Show("Groq TTS error. Is there a problem with your API key?", "Groq TTS error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MainRecordingStart.Enabled = true;
+                return;
+            }
+
+            string voiceModel = null;
+            if (tmpPersona.VoiceOptions != null && tmpPersona.VoiceOptions.Count > 0 && !tmpPersona.VoiceOptions[0].StartsWith("Default", StringComparison.OrdinalIgnoreCase))
+            {
+                voiceModel = tmpPersona.VoiceOptions[0];
+            }
+            var result = await _groqLLM.GroqTTS(TextToSpeak, UserSettingsManager.Settings.TTSAudioOutput, tmpPersona.VoiceName, tmpPersona.Rate, tmpPersona.Volume, voiceModel);
+            if (!result)
+            {
+                string err = !string.IsNullOrEmpty(_groqLLM.LastResponseError) ? _groqLLM.LastResponseError : "Playback or generation failed";
+                _bBBlog.Error("Groq TTS error: " + err);
+                UpdateTextLog("Groq TTS error: " + err + "\r\n");
+            }
+            else
+            {
+                _bBBlog.Info("Groq TTS done");
+                UpdateTextLog("Groq TTS done\r\n");
             }
             MainRecordingStart.Enabled = true;
         }
@@ -2824,49 +2869,92 @@ namespace BanterBrain_Buddy
 
             await InvokeUI(async () =>
             {
-                UpdateTextLog("Valid Twitch Chat message received from user: " + user + " message: " + message + ". Using trigger persona: " + UserSettingsManager.Settings.TwitchChatPersona + "\r\n");
-                await TalkToLLM(TwitchLLMLanguage.ChatMessageResponseLLM.Replace("{user}", user).Replace("{message}", message), GetPersonaRoleTextOrDefault(UserSettingsManager.Settings.TwitchChatPersona) + notableUserFlavourText);
-
-                //we have to await the GPT response, due to running this from another thread await alone is not enough.
-                while (!_gPTDone)
+                try
                 {
-                    await Task.Delay(500);
-                }
+                    UpdateTextLog("Valid Twitch Chat message received from user: " + user + " message: " + message + ". Using trigger persona: " + UserSettingsManager.Settings.TwitchChatPersona + "\r\n");
+                    await TalkToLLM(TwitchLLMLanguage.ChatMessageResponseLLM.Replace("{user}", user).Replace("{message}", message), GetPersonaRoleTextOrDefault(UserSettingsManager.Settings.TwitchChatPersona) + notableUserFlavourText);
 
-                //do we need to play the sound?
-                if (TwitchChatSoundCheckBox.Checked)
-                {
-                    if (TwitchChatSoundTextBox.Text.Length > 1)
+                    // Await the GPT response with a timeout safeguard so the bot never hangs indefinitely
+                    int timeoutCount = 0;
+                    while (!_gPTDone && timeoutCount < 120) // max 60 seconds
                     {
+                        await Task.Delay(500);
+                        timeoutCount++;
+                    }
 
-                        _bBBlog.Info("Playing alert sound for chat message");
-                        await PlayWaveFile(TwitchChatSoundTextBox.Text);
+                    if (!_gPTDone)
+                    {
+                        _bBBlog.Error($"LLM response timed out for chat message from {user}");
+                        UpdateTextLog($"LLM response timed out for user: {user}\r\n");
+                        if (TwitchResponseToChatCheckBox.Checked)
+                        {
+                            await _twitchEventSub.SendMessage($"@{user}, sorry, the AI took too long to respond.");
+                        }
+                        return;
+                    }
 
+                    if (string.IsNullOrWhiteSpace(_gPTOutputText))
+                    {
+                        _bBBlog.Warn($"LLM output was empty for user: {user}");
+                        if (TwitchResponseToChatCheckBox.Checked)
+                        {
+                            await _twitchEventSub.SendMessage($"@{user}, sorry, I could not generate a response.");
+                        }
+                        return;
+                    }
+
+                    //do we need to play the sound?
+                    if (TwitchChatSoundCheckBox.Checked)
+                    {
+                        if (TwitchChatSoundTextBox.Text.Length > 1)
+                        {
+                            _bBBlog.Info("Playing alert sound for chat message");
+                            await PlayWaveFile(TwitchChatSoundTextBox.Text);
+                        }
+                    }
+                    //do we need to TTS everything?
+                    if (TwitchChatTTSEverythingRadioButton.Checked)
+                    {
+                        await SayText(TwitchLLMLanguage.ChatMessageUserSaid.Replace("{user}", user).Replace("{message}", message), 0, GetSelectedPersona(UserSettingsManager.Settings.TwitchChatPersona));
+                    }
+
+                    //say the response      
+                    await SayText(_gPTOutputText, 0, GetSelectedPersona(UserSettingsManager.Settings.TwitchChatPersona));
+
+                    _bBBlog.Info("LLM response said");
+                    //do we need to post the response in chat?
+                    if (TwitchResponseToChatCheckBox.Checked)
+                    {
+                        //first lets wait the delay set in the textbox
+                        await Task.Delay(ParseIntOrDefault(TwitchResponseToChatDelayTextBox.Text, 1) * 1000);
+                        //then post the response
+                        bool sent = await _twitchEventSub.SendMessage(_gPTOutputText);
+                        if (sent)
+                        {
+                            UpdateTextLog("Response posted to Twitch chat.\r\n");
+                        }
+                        else
+                        {
+                            UpdateTextLog("Failed to post response to Twitch chat. Check logs for details.\r\n");
+                        }
                     }
                 }
-                //do we need to TTS everything?
-                if (TwitchChatTTSEverythingRadioButton.Checked)
+                catch (Exception ex)
                 {
-                    await SayText(TwitchLLMLanguage.ChatMessageUserSaid.Replace("{user}", user).Replace("{message}", message), 0, GetSelectedPersona(UserSettingsManager.Settings.TwitchChatPersona));
+                    _bBBlog.Error("Error handling Twitch chat command: " + ex.Message);
+                    UpdateTextLog("Error handling Twitch chat command: " + ex.Message + "\r\n");
+                    if (TwitchResponseToChatCheckBox.Checked)
+                    {
+                        await _twitchEventSub.SendMessage($"@{user}, an error occurred while processing your request.");
+                    }
                 }
-
-                //ok we waited, lets say the response, but we need a small delay to not sound unnatural      
-                await SayText(_gPTOutputText, 0, GetSelectedPersona(UserSettingsManager.Settings.TwitchChatPersona));
-
-                _bBBlog.Info("LLM response said");
-                //do we need to post the response in chat?
-                if (TwitchResponseToChatCheckBox.Checked)
+                finally
                 {
-                    //first lets wait the delay set in the textbox
-                    await Task.Delay(ParseIntOrDefault(TwitchResponseToChatDelayTextBox.Text, 1) * 1000);
-                    //then post the response
-                    await _twitchEventSub.SendMessage(_gPTOutputText);
+                    // Always re-enable the chat command trigger after cooldown delay so it never stays locked
+                    UpdateTextLog($"Starting command cooldown for next chat message of : {TwitchChatCommandDelay.Text} seconds\r\n");
+                    await _twitchEventSub.EventSubEnableChatMessageHandlerAfterDelay(ParseIntOrDefault(TwitchChatCommandDelay.Text, UserSettingsManager.Settings.TwitchChatCommandDelay));
+                    UpdateTextLog("Cooldown ended listening again for next chat message\r\n");
                 }
-
-                //we need to call the eventhandler again for chat messages to have its delay and continue.
-                UpdateTextLog($"Starting command cooldown for next chat messageof : {TwitchChatCommandDelay.Text} seconds\r\n");
-                await _twitchEventSub.EventSubEnableChatMessageHandlerAfterDelay(ParseIntOrDefault(TwitchChatCommandDelay.Text, UserSettingsManager.Settings.TwitchChatCommandDelay));
-                UpdateTextLog("Cooldown ended listening again for next chat message\r\n");
             });
 
         }

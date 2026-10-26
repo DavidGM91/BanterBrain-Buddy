@@ -1,11 +1,18 @@
+using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using OpenAI;
 using OpenAI.Chat;
 using OpenAI.Models;
 using System;
 using System.ClientModel;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Runtime.Versioning;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -31,6 +38,7 @@ namespace BanterBrain_Buddy
         // Groq's OpenAI compatible base URL, the SDK appends /chat/completions and /models
         private static readonly Uri groqEndpoint = new("https://api.groq.com/openai/v1/");
 
+        private int SelectedOutputDevice;
         private OpenAIClient _groqClient;
         private readonly List<ChatMessage> _chatHistory = new();
         public string GroqAPIKey { get; set; }
@@ -40,6 +48,32 @@ namespace BanterBrain_Buddy
         public string LastResponseError { get; private set; } = "";
 
         private SettingsManager UserSettingsManager = SettingsManager.Instance;
+
+        public static readonly string[] DefaultVoiceModels =
+        {
+            "canopylabs/orpheus-v1-english",
+            "canopylabs/orpheus-arabic-saudi"
+        };
+
+        public static readonly string[] DefaultVoices =
+        {
+            "autumn", "diana", "hannah", "austin", "daniel", "troy",
+            "fahad", "sultan", "lulwa", "noura", "abdullah", "aisha"
+        };
+
+        private void SetSelectedOutputDevice(string OutputDevice)
+        {
+            _bBBlog.Info($"Setting selected output device for Groq TTS to: {OutputDevice}");
+            for (int i = 0; i < NAudio.Wave.WaveOut.DeviceCount; i++)
+            {
+                var tmpOut = NAudio.Wave.WaveOut.GetCapabilities(i).ProductName;
+                if (!string.IsNullOrEmpty(OutputDevice) && OutputDevice.StartsWith(tmpOut))
+                {
+                    _bBBlog.Debug($"Selected outputdevice = {tmpOut}");
+                    SelectedOutputDevice = i;
+                }
+            }
+        }
 
         // builds an OpenAI SDK client aimed at the Groq endpoint instead of api.openai.com
         private static OpenAIClient CreateGroqClient(string apiKey)
@@ -113,6 +147,51 @@ namespace BanterBrain_Buddy
             {
                 _bBBlog.Error("Groq model list fetch failed: " + ex.Status + " " + ex.Message);
                 return new List<string>();
+            }
+        }
+
+        public static async Task<List<string>> FetchVoiceModelNamesAsync(string apiKey)
+        {
+            List<string> voiceModels = new();
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                return new List<string>(DefaultVoiceModels);
+            }
+            try
+            {
+                OpenAIClient client = CreateGroqClient(apiKey);
+                ClientResult<OpenAIModelCollection> modelsResult = await client.GetOpenAIModelClient().GetModelsAsync();
+                foreach (OpenAIModel model in modelsResult.Value)
+                {
+                    string id = model.Id;
+                    if (string.IsNullOrEmpty(id))
+                    {
+                        continue;
+                    }
+                    if ((id.Contains("orpheus", StringComparison.OrdinalIgnoreCase) ||
+                         id.Contains("tts", StringComparison.OrdinalIgnoreCase) ||
+                         id.Contains("speech", StringComparison.OrdinalIgnoreCase) ||
+                         id.Contains("audio", StringComparison.OrdinalIgnoreCase)) &&
+                        !id.Contains("whisper", StringComparison.OrdinalIgnoreCase))
+                    {
+                        voiceModels.Add(id);
+                    }
+                }
+                foreach (string def in DefaultVoiceModels)
+                {
+                    if (!voiceModels.Contains(def, StringComparer.OrdinalIgnoreCase))
+                    {
+                        voiceModels.Add(def);
+                    }
+                }
+                voiceModels.Sort();
+                _bBBlog.Info($"Fetched {voiceModels.Count} voice models from Groq");
+                return voiceModels;
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("Groq voice model list fetch failed: " + ex.Message);
+                return new List<string>(DefaultVoiceModels);
             }
         }
 
@@ -620,6 +699,316 @@ namespace BanterBrain_Buddy
             else
             {
                 _bBBlog.Debug("GroqChatReset failed, chat was not initialized anyway");
+            }
+        }
+
+        public static List<string> SplitTextIntoChunks(string text, int maxChunkLength = 180)
+        {
+            var chunks = new List<string>();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return chunks;
+            }
+
+            text = text.Trim();
+            while (text.Length > 0)
+            {
+                if (text.Length <= maxChunkLength)
+                {
+                    chunks.Add(text);
+                    break;
+                }
+
+                int splitIndex = -1;
+                for (int i = Math.Min(text.Length - 1, maxChunkLength - 1); i >= 30; i--)
+                {
+                    if (text[i] == '.' || text[i] == '!' || text[i] == '?' || text[i] == '\n')
+                    {
+                        splitIndex = i + 1;
+                        break;
+                    }
+                }
+
+                if (splitIndex == -1)
+                {
+                    for (int i = Math.Min(text.Length - 1, maxChunkLength - 1); i >= 30; i--)
+                    {
+                        if (text[i] == ',' || text[i] == ';' || text[i] == ':')
+                        {
+                            splitIndex = i + 1;
+                            break;
+                        }
+                    }
+                }
+
+                if (splitIndex == -1)
+                {
+                    for (int i = Math.Min(text.Length - 1, maxChunkLength - 1); i >= 20; i--)
+                    {
+                        if (char.IsWhiteSpace(text[i]))
+                        {
+                            splitIndex = i + 1;
+                            break;
+                        }
+                    }
+                }
+
+                if (splitIndex <= 0)
+                {
+                    splitIndex = Math.Min(text.Length, maxChunkLength);
+                }
+
+                string chunk = text.Substring(0, splitIndex).Trim();
+                if (!string.IsNullOrEmpty(chunk))
+                {
+                    chunks.Add(chunk);
+                }
+                text = text.Substring(splitIndex).Trim();
+            }
+
+            return chunks;
+        }
+
+        public async Task<bool> GroqTTS(string text, string outputDevice, string voice, int speed, int volumeControl, string voiceModel = null)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+            SetSelectedOutputDevice(outputDevice);
+
+            string apiKey = UserSettingsManager.Settings.GroqAPIKey;
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                apiKey = GroqAPIKey;
+            }
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                LastResponseError = "No Groq API key configured";
+                _bBBlog.Error("Groq TTS failed: " + LastResponseError);
+                return false;
+            }
+
+            string voiceName = string.IsNullOrWhiteSpace(voice) ? "autumn" : voice;
+
+            string selectedVoiceModel = !string.IsNullOrWhiteSpace(voiceModel)
+                ? voiceModel
+                : (!string.IsNullOrWhiteSpace(UserSettingsManager.Settings.GroqVoiceModel)
+                    ? UserSettingsManager.Settings.GroqVoiceModel
+                    : "canopylabs/orpheus-v1-english");
+
+            var chunks = SplitTextIntoChunks(text, 180);
+            if (chunks.Count == 0)
+            {
+                return false;
+            }
+
+            volumeControl = Math.Clamp(volumeControl, -100, 100);
+            float volumeMultiplier = 1.0f + (volumeControl / 100.0f);
+
+            Task<byte[]> nextAudioTask = null;
+            for (int i = 0; i < chunks.Count; i++)
+            {
+                byte[] audioBytes = nextAudioTask != null ? await nextAudioTask : await GenerateGroqSpeechAudioAsync(chunks[i], selectedVoiceModel, voiceName, apiKey);
+                if (audioBytes == null || audioBytes.Length == 0)
+                {
+                    _bBBlog.Error($"Groq TTS failed to generate audio for chunk {i + 1}/{chunks.Count}");
+                    return false;
+                }
+
+                // Prefetch next chunk while this one is playing
+                if (i + 1 < chunks.Count)
+                {
+                    string nextChunk = chunks[i + 1];
+                    nextAudioTask = GenerateGroqSpeechAudioAsync(nextChunk, selectedVoiceModel, voiceName, apiKey);
+                }
+                else
+                {
+                    nextAudioTask = null;
+                }
+
+                bool playOk = await PlayWavBytesAsync(audioBytes, SelectedOutputDevice, volumeMultiplier);
+                if (!playOk)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private async Task<byte[]> GenerateGroqSpeechAudioAsync(string chunk, string model, string voice, string apiKey)
+        {
+            try
+            {
+                using var httpClient = new HttpClient();
+                httpClient.Timeout = TimeSpan.FromSeconds(30);
+                httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+
+                var payload = new
+                {
+                    model = model,
+                    input = chunk,
+                    voice = voice,
+                    response_format = "wav"
+                };
+
+                string json = JsonConvert.SerializeObject(payload);
+                using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.groq.com/openai/v1/audio/speech")
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                };
+
+                HttpResponseMessage response = await httpClient.SendAsync(request);
+                if (!response.IsSuccessStatusCode)
+                {
+                    string errorBody = await response.Content.ReadAsStringAsync();
+                    try
+                    {
+                        JObject errJson = JObject.Parse(errorBody);
+                        string msg = (string)errJson["error"]?["message"];
+                        if (!string.IsNullOrEmpty(msg))
+                        {
+                            errorBody = msg;
+                        }
+                    }
+                    catch { }
+                    LastResponseError = $"HTTP {(int)response.StatusCode}: {errorBody}";
+                    _bBBlog.Error("Groq TTS request failed: " + LastResponseError);
+                    return null;
+                }
+
+                byte[] audioBytes = await response.Content.ReadAsByteArrayAsync();
+                return audioBytes;
+            }
+            catch (Exception ex)
+            {
+                LastResponseError = "Groq TTS exception: " + ex.Message;
+                _bBBlog.Error(LastResponseError);
+                return null;
+            }
+        }
+
+        private static WaveStream CreateWaveStreamFromBytes(byte[] wavBytes)
+        {
+            if (wavBytes == null || wavBytes.Length == 0)
+            {
+                return null;
+            }
+
+            // Check if this has a RIFF/WAVE header
+            if (wavBytes.Length >= 44 &&
+                wavBytes[0] == 'R' && wavBytes[1] == 'I' && wavBytes[2] == 'F' && wavBytes[3] == 'F' &&
+                wavBytes[8] == 'W' && wavBytes[9] == 'A' && wavBytes[10] == 'V' && wavBytes[11] == 'E')
+            {
+                // Fix chunk sizes if they are 0xFFFFFFFF, negative, or incorrect due to streaming TTS encoders
+                int actualRiffSize = wavBytes.Length - 8;
+                int riffSize = BitConverter.ToInt32(wavBytes, 4);
+                if (riffSize < 0 || riffSize > actualRiffSize || riffSize == 0)
+                {
+                    byte[] riffBytes = BitConverter.GetBytes(actualRiffSize);
+                    Array.Copy(riffBytes, 0, wavBytes, 4, 4);
+                }
+
+                int pos = 12;
+                int dataOffset = -1;
+                int dataSize = -1;
+                int channels = 1;
+                int sampleRate = 24000;
+                int bitsPerSample = 16;
+
+                while (pos + 8 <= wavBytes.Length)
+                {
+                    string chunkId = Encoding.ASCII.GetString(wavBytes, pos, 4);
+                    int chunkSize = BitConverter.ToInt32(wavBytes, pos + 4);
+
+                    if (chunkId == "fmt " && pos + 8 + 16 <= wavBytes.Length)
+                    {
+                        channels = BitConverter.ToInt16(wavBytes, pos + 10);
+                        sampleRate = BitConverter.ToInt32(wavBytes, pos + 12);
+                        bitsPerSample = BitConverter.ToInt16(wavBytes, pos + 22);
+                    }
+                    else if (chunkId == "data")
+                    {
+                        dataOffset = pos + 8;
+                        int availableData = wavBytes.Length - dataOffset;
+                        if (chunkSize < 0 || chunkSize > availableData || chunkSize == 0)
+                        {
+                            chunkSize = availableData;
+                            byte[] sizeBytes = BitConverter.GetBytes(availableData);
+                            Array.Copy(sizeBytes, 0, wavBytes, pos + 4, 4);
+                        }
+                        dataSize = chunkSize;
+                        break;
+                    }
+
+                    if (chunkSize < 0)
+                    {
+                        break;
+                    }
+                    pos += 8 + chunkSize;
+                }
+
+                // First attempt: try WaveFileReader with the sanitized header
+                try
+                {
+                    return new WaveFileReader(new MemoryStream(wavBytes));
+                }
+                catch (Exception ex)
+                {
+                    _bBBlog.Warn("WaveFileReader failed after sanitization: " + ex.Message + ", using RawSourceWaveStream fallback");
+                }
+
+                // Fallback attempt: if WaveFileReader failed but we found the data chunk and format
+                if (dataOffset > 0 && dataSize > 0 && dataOffset + dataSize <= wavBytes.Length)
+                {
+                    var format = new WaveFormat(sampleRate, bitsPerSample, channels);
+                    var pcmStream = new MemoryStream(wavBytes, dataOffset, dataSize);
+                    return new RawSourceWaveStream(pcmStream, format);
+                }
+            }
+
+            // Raw PCM fallback (Groq Orpheus default is 24kHz, 16-bit, 1 channel)
+            var fallbackFormat = new WaveFormat(24000, 16, 1);
+            return new RawSourceWaveStream(new MemoryStream(wavBytes), fallbackFormat);
+        }
+
+        private async Task<bool> PlayWavBytesAsync(byte[] wavBytes, int outputDevice, float volumeMultiplier)
+        {
+            try
+            {
+                var waveOut = new WaveOut
+                {
+                    DeviceNumber = outputDevice
+                };
+                WaveStream waveStream = CreateWaveStreamFromBytes(wavBytes);
+                if (waveStream == null)
+                {
+                    LastResponseError = "Failed to parse audio stream";
+                    return false;
+                }
+
+                var sampleChannel = new SampleChannel(waveStream, false);
+                var volumeProvider = new VolumeSampleProvider(sampleChannel)
+                {
+                    Volume = volumeMultiplier
+                };
+
+                waveOut.Init(volumeProvider);
+                waveOut.Play();
+                while (waveOut.PlaybackState != PlaybackState.Stopped)
+                {
+                    await Task.Delay(100);
+                }
+                waveOut.Dispose();
+                waveStream.Dispose();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LastResponseError = "Groq TTS playback failed: " + ex.Message;
+                _bBBlog.Error(LastResponseError);
+                return false;
             }
         }
 

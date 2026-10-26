@@ -234,24 +234,45 @@ namespace BanterBrain_Buddy
         {
             try
             {
-                BinaryData content = ex.GetRawResponse()?.Content;
-                if (content != null)
+                var raw = ex.GetRawResponse();
+                string body = null;
+                if (raw != null)
                 {
-                    string body = content.ToString();
-                    if (!string.IsNullOrWhiteSpace(body))
+                    if (raw.Content != null)
                     {
-                        JObject json = JObject.Parse(body);
-                        string errMessage = (string)json["error"]?["message"];
-                        if (!string.IsNullOrWhiteSpace(errMessage))
+                        body = raw.Content.ToString();
+                    }
+                    else if (raw.ContentStream != null && raw.ContentStream.CanRead)
+                    {
+                        using var reader = new StreamReader(raw.ContentStream, Encoding.UTF8, true, 1024, true);
+                        if (raw.ContentStream.CanSeek)
                         {
-                            return $"{ex.Status} {errMessage}";
+                            raw.ContentStream.Position = 0;
                         }
+                        body = reader.ReadToEnd();
+                    }
+                }
+                if (!string.IsNullOrWhiteSpace(body))
+                {
+                    JObject json = JObject.Parse(body);
+                    string errMessage = (string)json["error"]?["message"];
+                    if (!string.IsNullOrWhiteSpace(errMessage))
+                    {
+                        return $"{ex.Status}: {errMessage}";
                     }
                 }
             }
             catch
             {
                 // Fall back to ex.Message if parsing raw response fails
+            }
+            if (ex.Status == 402)
+            {
+                return $"{ex.Status} Payment Required: Google AI Studio/Cloud prepaid credit balance is depleted or requires billing setup. Note: Request quotas (RPM/RPD) are separate from prepaid billing balance.";
+            }
+            if (ex.Status == 429)
+            {
+                return $"{ex.Status} (Too Many Requests / Quota Exceeded): The model or project rate limit was reached. If using a preview model like gemini-3.1-flash-lite, try switching to 'gemini-2.5-flash'.";
             }
             return $"{ex.Status} {ex.Message}";
         }

@@ -4,7 +4,7 @@ I have picked it up! At least to keep it working, might not add new features... 
 [![banterbrain buddy intro video](https://img.youtube.com/vi/3U-PzTrTVyo/0.jpg)](https://www.youtube.com/watch?v=3U-PzTrTVyo)
 
 
-### BanterBrain Buddy v1.0.12 release
+### BanterBrain Buddy v1.0.13 release
 
 **This program requires a valid API key (OpenAI ChatGPT, Groq, Google AI Gemini) to operate _or_ a local Ollama installation.** 
 
@@ -19,6 +19,11 @@ You can also download Runtime Desktop here: [Windows Runtime Desktop 8.0.4](http
 - Plugging in/out audio devices while BBB runs can have an unforseen effect on your input/output and throw errors
 - No ability to check for Twitch followers
 - ElevenLabs API check (preloading voices) can sometimes timeout after 15 seconds. This makes the first time you use it, probably quite a bit slower when editing persona's, but that's only until it works. This cannot really be fixed on my side.
+
+### RELEASE V1.0.13
+New:
+- Added Groq Text-to-Speech (TTS) audio generation supporting Orpheus models and voices with automatic sentence chunking and NAudio playback
+- Added Groq voice model selection and dynamic voice model fetching to Settings and Persona configuration
 
 ### RELEASE V1.0.12
 New:
