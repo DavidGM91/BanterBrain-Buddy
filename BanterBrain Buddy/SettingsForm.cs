@@ -428,6 +428,29 @@ namespace BanterBrain_Buddy
             {
                 GroqReasoningComboBox.SelectedIndex = 0;
             }
+            if (UserSettingsManager.Settings.GroqWhisperModelListCache != null && UserSettingsManager.Settings.GroqWhisperModelListCache.Count > 0)
+            {
+                GroqWhisperModelComboBox.Items.Clear();
+                foreach (string wm in UserSettingsManager.Settings.GroqWhisperModelListCache)
+                {
+                    GroqWhisperModelComboBox.Items.Add(wm);
+                }
+            }
+            int groqWhisperIndex = GroqWhisperModelComboBox.FindStringExact(UserSettingsManager.Settings.GroqWhisperModel ?? "");
+            GroqWhisperModelComboBox.SelectedIndex = groqWhisperIndex >= 0 ? groqWhisperIndex : 0;
+
+            if (!string.IsNullOrEmpty(UserSettingsManager.Settings.GroqWhisperLanguage))
+            {
+                GroqWhisperLanguageComboBox.SelectedIndex = GroqWhisperLanguageComboBox.FindStringExact(UserSettingsManager.Settings.GroqWhisperLanguage);
+            }
+            else
+            {
+                GroqWhisperLanguageComboBox.SelectedIndex = GroqWhisperLanguageComboBox.FindStringExact(UserSettingsManager.Settings.WhisperSpeechRecognitionComboBox ?? "English");
+            }
+            if (GroqWhisperLanguageComboBox.SelectedIndex < 0)
+            {
+                GroqWhisperLanguageComboBox.SelectedIndex = 0;
+            }
             //Google AI: older settings files have no values for these, stay null-safe and fall back to defaults
             GoogleAPIKeyTextBox.Text = UserSettingsManager.Settings.GoogleAPIKey ?? "";
             //restore the model list from the last fetch, so the selector stays filled across restarts
@@ -475,6 +498,29 @@ namespace BanterBrain_Buddy
             }
             int googleVoiceIndex = GoogleVoiceModelComboBox.FindStringExact(UserSettingsManager.Settings.GoogleVoiceModel ?? "");
             GoogleVoiceModelComboBox.SelectedIndex = googleVoiceIndex >= 0 ? googleVoiceIndex : 0;
+            if (UserSettingsManager.Settings.GoogleSTTModelListCache != null && UserSettingsManager.Settings.GoogleSTTModelListCache.Count > 0)
+            {
+                GoogleSTTModelComboBox.Items.Clear();
+                foreach (string sm in UserSettingsManager.Settings.GoogleSTTModelListCache)
+                {
+                    GoogleSTTModelComboBox.Items.Add(sm);
+                }
+            }
+            int googleSTTIndex = GoogleSTTModelComboBox.FindStringExact(UserSettingsManager.Settings.GoogleSTTModel ?? "");
+            GoogleSTTModelComboBox.SelectedIndex = googleSTTIndex >= 0 ? googleSTTIndex : 0;
+
+            if (!string.IsNullOrEmpty(UserSettingsManager.Settings.GoogleSTTLanguage))
+            {
+                GoogleSTTLanguageComboBox.SelectedIndex = GoogleSTTLanguageComboBox.FindStringExact(UserSettingsManager.Settings.GoogleSTTLanguage);
+            }
+            else
+            {
+                GoogleSTTLanguageComboBox.SelectedIndex = GoogleSTTLanguageComboBox.FindStringExact(UserSettingsManager.Settings.WhisperSpeechRecognitionComboBox ?? "English");
+            }
+            if (GoogleSTTLanguageComboBox.SelectedIndex < 0)
+            {
+                GoogleSTTLanguageComboBox.SelectedIndex = 0;
+            }
             ElevenlabsAPIKeyTextBox.Text = UserSettingsManager.Settings.ElevenLabsAPIkey;
             ElevenLabsModelComboBox.SelectedIndex = ElevenLabsModelComboBox.FindStringExact(UserSettingsManager.Settings.ElevenLabsModel);
             if (ElevenLabsModelComboBox.SelectedIndex == -1)
@@ -608,8 +654,14 @@ namespace BanterBrain_Buddy
                 UserSettingsManager.Settings.GroqMaxTokens = ParseIntOrDefault(GroqMaxTokensTextBox.Text, UserSettingsManager.Settings.GroqMaxTokens);
             if (GroqTemperatureTextBox.Text.Length > 0)
                 UserSettingsManager.Settings.GroqTemperature = ParseFloatOrDefault(GroqTemperatureTextBox.Text, UserSettingsManager.Settings.GroqTemperature);
+            if (!string.IsNullOrEmpty(GroqWhisperModelComboBox.Text))
+                UserSettingsManager.Settings.GroqWhisperModel = GroqWhisperModelComboBox.Text;
+            if (!string.IsNullOrEmpty(GroqWhisperLanguageComboBox.Text))
+                UserSettingsManager.Settings.GroqWhisperLanguage = GroqWhisperLanguageComboBox.Text;
             if (!string.IsNullOrEmpty(GroqVoiceModelComboBox.Text))
                 UserSettingsManager.Settings.GroqVoiceModel = GroqVoiceModelComboBox.Text;
+
+
             if (GoogleModelComboBox.Text.Length > 0)
                 UserSettingsManager.Settings.GoogleModel = GoogleModelComboBox.Text;
             if (GoogleAPIKeyTextBox.Text.Length > 0)
@@ -619,6 +671,10 @@ namespace BanterBrain_Buddy
             if (GoogleTemperatureTextBox.Text.Length > 0)
                 UserSettingsManager.Settings.GoogleTemperature = ParseFloatOrDefault(GoogleTemperatureTextBox.Text, UserSettingsManager.Settings.GoogleTemperature);
             UserSettingsManager.Settings.GoogleReasoningEffortComboBox = GoogleReasoningComboBox.SelectedIndex > 0 ? GoogleReasoningComboBox.Text : "";
+            if (!string.IsNullOrEmpty(GoogleSTTModelComboBox.Text))
+                UserSettingsManager.Settings.GoogleSTTModel = GoogleSTTModelComboBox.Text;
+            if (!string.IsNullOrEmpty(GoogleSTTLanguageComboBox.Text))
+                UserSettingsManager.Settings.GoogleSTTLanguage = GoogleSTTLanguageComboBox.Text;
             if (!string.IsNullOrEmpty(GoogleVoiceModelComboBox.Text))
                 UserSettingsManager.Settings.GoogleVoiceModel = GoogleVoiceModelComboBox.Text;
             if (NativeSpeechRecognitionLanguageComboBox.Text.Length > 1)
@@ -2912,6 +2968,8 @@ namespace BanterBrain_Buddy
                 else
                     GroqVoiceModelComboBox.SelectedIndex = 0;
                 UserSettingsManager.Settings.GroqVoiceModel = GroqVoiceModelComboBox.Text;
+
+
                 UserSettingsManager.Settings.GroqVoiceModelListCache = voiceModels;
                 UserSettingsManager.SaveSettings();
                 _bBBlog.Info($"Loaded {voiceModels.Count} Groq voice models from the Groq API");
@@ -2927,6 +2985,67 @@ namespace BanterBrain_Buddy
         //asks the Groq API which reasoning effort levels the model in the Groq model selector
         //supports and fills the effort dropdown with them, the models endpoints do not report
         //capabilities so the fetch uses a rejected probe request, see Groq.FetchReasoningEffortLevelsAsync
+        [SupportedOSPlatform("windows10.0.10240")]
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async void GroqLoadWhisperModelsButton_Click(object sender, EventArgs e)
+        {
+            string apiKey = GroqAPIKeyTextBox.Text.Trim();
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                _bBBlog.Info("Groq whisper model list load requested without an API key");
+                MessageBox.Show("Enter a Groq API key first", "Groq whisper models", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            GroqLoadWhisperModelsButton.Enabled = false;
+            bool loaded = await RefreshGroqWhisperModelsFromAPIAsync(apiKey);
+            GroqLoadWhisperModelsButton.Enabled = true;
+            if (!loaded)
+            {
+                MessageBox.Show("Could not load the whisper model list. Check the API key or your internet connection.", "Groq whisper models", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            else
+            {
+                MessageBox.Show($"Loaded {GroqWhisperModelComboBox.Items.Count} Groq whisper models.", "Groq whisper models", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async Task<bool> RefreshGroqWhisperModelsFromAPIAsync(string apiKey)
+        {
+            try
+            {
+                List<string> whisperModels = await Groq.FetchWhisperModelNamesAsync(apiKey);
+                if (whisperModels.Count < 1)
+                {
+                    _bBBlog.Info("No Groq whisper models fetched, keeping the built-in list");
+                    return false;
+                }
+                string previousSelection = GroqWhisperModelComboBox.Text;
+                GroqWhisperModelComboBox.Items.Clear();
+                foreach (string model in whisperModels)
+                {
+                    GroqWhisperModelComboBox.Items.Add(model);
+                }
+                int index = GroqWhisperModelComboBox.FindStringExact(previousSelection);
+                if (index < 0)
+                    index = GroqWhisperModelComboBox.FindStringExact(UserSettingsManager.Settings.GroqWhisperModel ?? "");
+                if (index >= 0)
+                    GroqWhisperModelComboBox.SelectedIndex = index;
+                else
+                    GroqWhisperModelComboBox.SelectedIndex = 0;
+                UserSettingsManager.Settings.GroqWhisperModel = GroqWhisperModelComboBox.Text;
+                UserSettingsManager.Settings.GroqWhisperModelListCache = whisperModels;
+                UserSettingsManager.SaveSettings();
+                _bBBlog.Info($"Loaded {whisperModels.Count} Groq whisper models from the Groq API");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("Groq whisper model fetch failed: " + ex.Message);
+                return false;
+            }
+        }
+
         [SupportedOSPlatform("windows10.0.10240")]
         private async void GroqReasoningLoadButton_Click(object sender, EventArgs e)
         {
@@ -3250,6 +3369,67 @@ namespace BanterBrain_Buddy
             catch (Exception ex)
             {
                 _bBBlog.Error("Google voice model fetch failed: " + ex.Message);
+                return false;
+            }
+        }
+
+        [SupportedOSPlatform("windows10.0.10240")]
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async void GoogleLoadSTTModelsButton_Click(object sender, EventArgs e)
+        {
+            string apiKey = GoogleAPIKeyTextBox.Text.Trim();
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                _bBBlog.Info("Google STT model list load requested without an API key");
+                MessageBox.Show("Enter a Google AI API key first", "Google STT models", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            GoogleLoadSTTModelsButton.Enabled = false;
+            bool loaded = await RefreshGoogleSTTModelsFromAPIAsync(apiKey);
+            GoogleLoadSTTModelsButton.Enabled = true;
+            if (!loaded)
+            {
+                MessageBox.Show("Could not load the STT model list. Check the API key or your internet connection.", "Google STT models", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            else
+            {
+                MessageBox.Show($"Loaded {GoogleSTTModelComboBox.Items.Count} Google STT models.", "Google STT models", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async Task<bool> RefreshGoogleSTTModelsFromAPIAsync(string apiKey)
+        {
+            try
+            {
+                List<string> sttModels = await GoogleAI.FetchSTTModelNamesAsync(apiKey);
+                if (sttModels.Count < 1)
+                {
+                    _bBBlog.Info("No Google STT models fetched, keeping the built-in list");
+                    return false;
+                }
+                string previousSelection = GoogleSTTModelComboBox.Text;
+                GoogleSTTModelComboBox.Items.Clear();
+                foreach (string model in sttModels)
+                {
+                    GoogleSTTModelComboBox.Items.Add(model);
+                }
+                int index = GoogleSTTModelComboBox.FindStringExact(previousSelection);
+                if (index < 0)
+                    index = GoogleSTTModelComboBox.FindStringExact(UserSettingsManager.Settings.GoogleSTTModel ?? "");
+                if (index >= 0)
+                    GoogleSTTModelComboBox.SelectedIndex = index;
+                else
+                    GoogleSTTModelComboBox.SelectedIndex = 0;
+                UserSettingsManager.Settings.GoogleSTTModel = GoogleSTTModelComboBox.Text;
+                UserSettingsManager.Settings.GoogleSTTModelListCache = sttModels;
+                UserSettingsManager.SaveSettings();
+                _bBBlog.Info($"Loaded {sttModels.Count} Google STT models from the Google API");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("Google STT model fetch failed: " + ex.Message);
                 return false;
             }
         }

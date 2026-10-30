@@ -24,6 +24,9 @@ You can also download Runtime Desktop here: [Windows Runtime Desktop 8.0.4](http
 New:
 - Added Groq Text-to-Speech (TTS) audio generation supporting Orpheus models and voices with automatic sentence chunking and NAudio playback
 - Added Groq voice model selection and dynamic voice model fetching to Settings and Persona configuration
+- Added Groq Whisper Speech-to-Text (STT) support with model selection (whisper-large-v3, whisper-large-v3-turbo), speech recognition language selection, and dynamic model loading
+- Added Google Gemini Speech-to-Text (STT) support with model selection (gemini-3.5-transcribe, gemini-2.5-flash), speech recognition language selection, and dynamic model loading
+- Added "Immediately" option under "Post response to chat" settings to post AI text responses to Twitch chat right as TTS starts instead of waiting for speech audio playback to finish (accessibility option for deaf and hard-of-hearing viewers)
 
 ### RELEASE V1.0.12
 New:

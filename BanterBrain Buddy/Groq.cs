@@ -3,6 +3,7 @@ using NAudio.Wave.SampleProviders;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using OpenAI;
+using OpenAI.Audio;
 using OpenAI.Chat;
 using OpenAI.Models;
 using System;
@@ -54,6 +55,13 @@ namespace BanterBrain_Buddy
             "canopylabs/orpheus-v1-english",
             "canopylabs/orpheus-arabic-saudi"
         };
+
+        public static readonly string[] DefaultWhisperModels =
+        {
+            "whisper-large-v3",
+            "whisper-large-v3-turbo"
+        };
+        private const string defaultWhisperModel = "whisper-large-v3";
 
         public static readonly string[] DefaultVoices =
         {
@@ -192,6 +200,47 @@ namespace BanterBrain_Buddy
             {
                 _bBBlog.Error("Groq voice model list fetch failed: " + ex.Message);
                 return new List<string>(DefaultVoiceModels);
+            }
+        }
+
+        public static async Task<List<string>> FetchWhisperModelNamesAsync(string apiKey)
+        {
+            List<string> whisperModels = new();
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                return new List<string>(DefaultWhisperModels);
+            }
+            try
+            {
+                OpenAIClient client = CreateGroqClient(apiKey);
+                ClientResult<OpenAIModelCollection> modelsResult = await client.GetOpenAIModelClient().GetModelsAsync();
+                foreach (OpenAIModel model in modelsResult.Value)
+                {
+                    string id = model.Id;
+                    if (string.IsNullOrEmpty(id))
+                    {
+                        continue;
+                    }
+                    if (id.Contains("whisper", StringComparison.OrdinalIgnoreCase))
+                    {
+                        whisperModels.Add(id);
+                    }
+                }
+                foreach (string def in DefaultWhisperModels)
+                {
+                    if (!whisperModels.Contains(def, StringComparer.OrdinalIgnoreCase))
+                    {
+                        whisperModels.Add(def);
+                    }
+                }
+                whisperModels.Sort();
+                _bBBlog.Info($"Fetched {whisperModels.Count} whisper models from Groq");
+                return whisperModels;
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("Groq whisper model list fetch failed: " + ex.Message);
+                return new List<string>(DefaultWhisperModels);
             }
         }
 
@@ -1009,6 +1058,101 @@ namespace BanterBrain_Buddy
                 LastResponseError = "Groq TTS playback failed: " + ex.Message;
                 _bBBlog.Error(LastResponseError);
                 return false;
+            }
+        }
+
+        public async Task<string> GroqSTT(string audioFile)
+        {
+            if (string.IsNullOrEmpty(audioFile) || !File.Exists(audioFile))
+            {
+                _bBBlog.Error($"Groq STT audio file not found or empty: {audioFile}");
+                return null;
+            }
+
+            string languageSetting = !string.IsNullOrEmpty(UserSettingsManager.Settings.GroqWhisperLanguage)
+                ? UserSettingsManager.Settings.GroqWhisperLanguage
+                : UserSettingsManager.Settings.WhisperSpeechRecognitionComboBox;
+
+            _bBBlog.Info("Sending to Groq STT with language: " + languageSetting);
+            string isoLanguage = GetIsoLanguage(languageSetting);
+
+            if (_groqClient == null || GroqAPIKey != UserSettingsManager.Settings.GroqAPIKey)
+            {
+                GroqAPIKey = UserSettingsManager.Settings.GroqAPIKey;
+                if (!string.IsNullOrEmpty(GroqAPIKey))
+                {
+                    _groqClient = CreateGroqClient(GroqAPIKey);
+                }
+            }
+
+            if (_groqClient == null)
+            {
+                _bBBlog.Error("Groq STT failed: no client or API key available");
+                return null;
+            }
+
+            string whisperModel = !string.IsNullOrEmpty(UserSettingsManager.Settings.GroqWhisperModel)
+                ? UserSettingsManager.Settings.GroqWhisperModel
+                : defaultWhisperModel;
+
+            AudioClient whisperClient = _groqClient.GetAudioClient(whisperModel);
+            AudioTranscriptionOptions transcriptionOptions = new()
+            {
+                Language = isoLanguage
+            };
+
+            try
+            {
+                ClientResult<AudioTranscription> sttResult = await whisperClient.TranscribeAudioAsync(audioFile, transcriptionOptions);
+
+                if (sttResult?.Value?.Text == null)
+                {
+                    _bBBlog.Error("Groq STT failed");
+                    return null;
+                }
+                return sttResult.Value.Text;
+            }
+            catch (ClientResultException ex)
+            {
+                _bBBlog.Error("Groq STT failed: " + ex.Status + " " + ex.Message);
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("Groq STT failed: " + ex.Message);
+                return null;
+            }
+        }
+
+        private static string GetIsoLanguage(string language)
+        {
+            switch (language)
+            {
+                case "Dutch":
+                    return "nl";
+                case "Danish":
+                    return "da";
+                case "English":
+                    return "en";
+                case "French":
+                    return "fr";
+                case "German":
+                    return "de";
+                case "Italian":
+                    return "it";
+                case "Japanese":
+                    return "ja";
+                case "Norwegian":
+                    return "no";
+                case "Polish":
+                    return "pl";
+                case "Spanish":
+                    return "es";
+                case "Swedish":
+                    return "sv";
+                default:
+                    _bBBlog.Error("Groq STT language not recognized, using english");
+                    return "en";
             }
         }
 

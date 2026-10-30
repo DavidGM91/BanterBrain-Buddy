@@ -1,4 +1,4 @@
-﻿using System.Windows.Forms;
+using System.Windows.Forms;
 
 namespace BanterBrain_Buddy
 {
@@ -68,6 +68,7 @@ namespace BanterBrain_Buddy
             TwitchResponseToChatDelayTextBox = new TextBox();
             TwitchPostResponseToChatDelayLabel = new Label();
             TwitchResponseToChatCheckBox = new CheckBox();
+            TwitchResponseSendImmediatelyCheckBox = new CheckBox();
             TwitchSoundsSettings = new GroupBox();
             TwitchChatSoundSelectButton = new Button();
             TwitchSubscriptionSoundTextBox = new ComboBox();
@@ -406,6 +407,7 @@ namespace BanterBrain_Buddy
             // 
             TwitchResponseSettings.Controls.Add(TwitchResponseToChatDelayTextBox);
             TwitchResponseSettings.Controls.Add(TwitchPostResponseToChatDelayLabel);
+            TwitchResponseSettings.Controls.Add(TwitchResponseSendImmediatelyCheckBox);
             TwitchResponseSettings.Controls.Add(TwitchResponseToChatCheckBox);
             resources.ApplyResources(TwitchResponseSettings, "TwitchResponseSettings");
             TwitchResponseSettings.Name = "TwitchResponseSettings";
@@ -423,6 +425,14 @@ namespace BanterBrain_Buddy
             // 
             resources.ApplyResources(TwitchPostResponseToChatDelayLabel, "TwitchPostResponseToChatDelayLabel");
             TwitchPostResponseToChatDelayLabel.Name = "TwitchPostResponseToChatDelayLabel";
+            // 
+            // TwitchResponseSendImmediatelyCheckBox
+            // 
+            resources.ApplyResources(TwitchResponseSendImmediatelyCheckBox, "TwitchResponseSendImmediatelyCheckBox");
+            TwitchResponseSendImmediatelyCheckBox.Name = "TwitchResponseSendImmediatelyCheckBox";
+            BBBToolTip.SetToolTip(TwitchResponseSendImmediatelyCheckBox, resources.GetString("TwitchResponseSendImmediatelyCheckBox.ToolTip"));
+            TwitchResponseSendImmediatelyCheckBox.UseVisualStyleBackColor = true;
+            TwitchResponseSendImmediatelyCheckBox.CheckedChanged += TwitchResponseSendImmediatelyCheckBox_CheckedChanged;
             // 
             // TwitchResponseToChatCheckBox
             // 
@@ -995,6 +1005,7 @@ namespace BanterBrain_Buddy
         private TextBox TwitchResponseToChatDelayTextBox;
         private Label TwitchPostResponseToChatDelayLabel;
         private CheckBox TwitchResponseToChatCheckBox;
+        private CheckBox TwitchResponseSendImmediatelyCheckBox;
         private RadioButton TwitchSubscriptionTTSResponseOnlyRadioButton;
         private RadioButton TwitchSubscriptionTTSEverythingRadioButton;
         private RadioButton TwitchChannelPointTTSResponseOnlyRadioButton;

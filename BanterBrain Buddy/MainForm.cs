@@ -858,8 +858,39 @@ namespace BanterBrain_Buddy
                      MessageBox.Show("OpenAI API setting invalid! Value cleared, please fix in settings.", "OpenAI Whisper error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
-        }
 
+            if (!string.IsNullOrEmpty(UserSettingsManager.Settings.GroqAPIKey) && UserSettingsManager.Settings.GroqAPIKey.Length > 1)
+            {
+                _groqLLM ??= new();
+                if (await _groqLLM.GroqCheckAPIKey())
+                {
+                    STTSelectedComboBox.Items.Add("Groq Whisper");
+                    _bBBlog.Info("Groq API setting valid, adding Groq Whisper to STT list");
+                    UpdateTextLog("Groq API setting valid for STT\r\n");
+                }
+                else
+                {
+                    _bBBlog.Error("Groq API setting invalid for STT");
+                    UpdateTextLog("Groq API setting invalid for STT\r\n");
+                }
+            }
+
+            if (!string.IsNullOrEmpty(UserSettingsManager.Settings.GoogleAPIKey) && UserSettingsManager.Settings.GoogleAPIKey.Length > 1)
+            {
+                _googleLLM ??= new();
+                if (await _googleLLM.GoogleAICheckAPIKey())
+                {
+                    STTSelectedComboBox.Items.Add("Google Gemini");
+                    _bBBlog.Info("Google API setting valid, adding Google Gemini to STT list");
+                    UpdateTextLog("Google API setting valid for STT\r\n");
+                }
+                else
+                {
+                    _bBBlog.Error("Google API setting invalid for STT");
+                    UpdateTextLog("Google API setting invalid for STT\r\n");
+                }
+            }
+        }
         /// <summary>
         /// Twitch requires you to validate your access token every hour. This starts this timer when Twitch is enabled.
         /// </summary>
@@ -1051,6 +1082,10 @@ namespace BanterBrain_Buddy
                 NativeSTTfromWAV(tmpWavFile);
             if (STTSelectedComboBox.Text == "OpenAI Whisper")
                 WhisperSTTfromWAV(tmpWavFile);
+            if (STTSelectedComboBox.Text == "Groq Whisper")
+                GroqWhisperSTTfromWAV(tmpWavFile);
+            if (STTSelectedComboBox.Text == "Google Gemini")
+                GoogleSTTfromWAV(tmpWavFile);
         }
 
 
@@ -1095,6 +1130,85 @@ namespace BanterBrain_Buddy
         }
 
         [SupportedOSPlatform("windows10.0.10240")]
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async void GroqWhisperSTTfromWAV(string tmpWavFile)
+        {
+            _sTTOutputText = "";
+            _groqLLM ??= new();
+            _bBBlog.Info("Starting Groq Whisper STT from WAV");
+            try
+            {
+                _sTTOutputText = await _groqLLM.GroqSTT(tmpWavFile);
+                if (_sTTOutputText == null)
+                {
+                    _bBBlog.Error("Groq Whisper STT failed");
+                    _bigError = true;
+                }
+                else
+                {
+                    _bBBlog.Info($"Groq Whisper STT done: {_sTTOutputText}");
+                }
+            }
+            catch (Exception ex)
+            {
+                //async void, nothing may escape. Flag the error so the waiting caller stops
+                _bBBlog.Error("Groq Whisper STT threw: " + ex.Message);
+                _bigError = true;
+            }
+            finally
+            {
+                _sTTDone = true;
+                _bBBlog.Debug($"Deleting temp wav file: {tmpWavFile}");
+                try
+                {
+                    File.Delete(tmpWavFile);
+                }
+                catch (Exception ex)
+                {
+                    _bBBlog.Warn("Could not delete temp wav file: " + ex.Message);
+                }
+            }
+        }
+
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async void GoogleSTTfromWAV(string tmpWavFile)
+        {
+            _sTTOutputText = "";
+            _googleLLM ??= new();
+            _bBBlog.Info("Starting Google Gemini STT from WAV");
+            try
+            {
+                _sTTOutputText = await _googleLLM.GoogleSTT(tmpWavFile);
+                if (_sTTOutputText == null)
+                {
+                    _bBBlog.Error("Google Gemini STT failed");
+                    _bigError = true;
+                }
+                else
+                {
+                    _bBBlog.Info($"Google Gemini STT done: {_sTTOutputText}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("Google Gemini STT threw: " + ex.Message);
+                _bigError = true;
+            }
+            finally
+            {
+                _sTTDone = true;
+                _bBBlog.Debug($"Deleting temp wav file: {tmpWavFile}");
+                try
+                {
+                    File.Delete(tmpWavFile);
+                }
+                catch (Exception ex)
+                {
+                    _bBBlog.Warn("Could not delete temp wav file: " + ex.Message);
+                }
+            }
+        }
+
         private async void NativeSTTfromWAV(string tmpWavFile)
         {
             _sTTDone = false;
@@ -1644,6 +1758,28 @@ namespace BanterBrain_Buddy
                     }
                 }
 
+                else if (selectedProvider == "Groq Whisper")
+                {
+                    UpdateTextLog("Groq Whisper STT calling\r\n");
+                    _bBBlog.Info("Groq Whisper STT calling");
+                    await InputStreamtoWav();
+                    while (!_sTTDone)
+                    {
+                        await Task.Delay(500);
+                    }
+                }
+
+                else if (selectedProvider == "Google Gemini")
+                {
+                    UpdateTextLog("Google Gemini STT calling\r\n");
+                    _bBBlog.Info("Google Gemini STT calling");
+                    await InputStreamtoWav();
+                    while (!_sTTDone)
+                    {
+                        await Task.Delay(500);
+                    }
+                }
+
                 else if (selectedProvider == "Azure")
                 {
                     UpdateTextLog("Azure STT calling\r\n");
@@ -1864,6 +2000,7 @@ namespace BanterBrain_Buddy
                 TwitchSoundsSettings.Enabled = false;
                 TwitchResponseSettings.Enabled = false;
             }
+            UpdateTwitchResponseChatControlsState();
 
             TwitchReadChatCheckBox.Checked = UserSettingsManager.Settings.TwitchReadChatCheckBox;
             TwitchCheerCheckBox.Checked = UserSettingsManager.Settings.TwitchCheerCheckbox;
@@ -1914,6 +2051,8 @@ namespace BanterBrain_Buddy
             }
 
             TwitchResponseToChatCheckBox.Checked = UserSettingsManager.Settings.TwitchResponseToChatCheckBox;
+            TwitchResponseSendImmediatelyCheckBox.Checked = UserSettingsManager.Settings.TwitchResponseSendImmediatelyCheckBox;
+            UpdateTwitchResponseChatControlsState();
 
             //load settings but also have safe defaults
             TwitchSubscriptionTTSResponseOnlyRadioButton.Checked = UserSettingsManager.Settings.TwitchSubscriptionTTSResponseOnlyRadioButton;
@@ -2197,6 +2336,7 @@ namespace BanterBrain_Buddy
             UserSettingsManager.Settings.TwitchSubscriptionSoundTextBox = TwitchSubscriptionSoundTextBox.Text;
             UserSettingsManager.Settings.TwitchSubscriptionSoundCheckBox = TwitchSubscriptionSoundCheckBox.Checked;
             UserSettingsManager.Settings.TwitchResponseToChatCheckBox = TwitchResponseToChatCheckBox.Checked;
+            UserSettingsManager.Settings.TwitchResponseSendImmediatelyCheckBox = TwitchResponseSendImmediatelyCheckBox.Checked;
             UserSettingsManager.Settings.TwitchResponseToChatDelayTextBox = TwitchResponseToChatDelayTextBox.Text;
             UserSettingsManager.Settings.TwitchDelayMessageTextBox = TwitchDelayMessageTextBox.Text;
             UserSettingsManager.Settings.DelayFinishToChatcCheckBox = TwitchDelayFinishToChatcCheckBox.Checked;
@@ -2578,16 +2718,24 @@ namespace BanterBrain_Buddy
                 }
 
                 _bBBlog.Info("LLM response received, saying it");
+                Task chatSendTask = Task.CompletedTask;
+                if (TwitchResponseToChatCheckBox.Checked && TwitchResponseSendImmediatelyCheckBox.Checked)
+                {
+                    _bBBlog.Info("Posting cheer response to chat immediately (hearing accessibility mode)");
+                    chatSendTask = PostResponseToChatAsync(_gPTOutputText);
+                }
+
                 await SayText(_gPTOutputText, 0, GetSelectedPersona(UserSettingsManager.Settings.TwitchCheeringPersona));
                 _bBBlog.Info("LLM response said");
                 //do we need to post the response in chat?
-                if (TwitchResponseToChatCheckBox.Checked)
+                if (TwitchResponseToChatCheckBox.Checked && !TwitchResponseSendImmediatelyCheckBox.Checked)
                 {
                     //first lets wait the delay set in the textbox
                     await Task.Delay(ParseIntOrDefault(TwitchResponseToChatDelayTextBox.Text, 1) * 1000);
                     //then post the response
-                    await _twitchEventSub.SendMessage(_gPTOutputText);
+                    await PostResponseToChatAsync(_gPTOutputText);
                 }
+                await chatSendTask;
             });
         }
 
@@ -2648,16 +2796,24 @@ namespace BanterBrain_Buddy
                 }
 
                 //ok we waited, lets say the response, but we need a small delay to not sound unnatural
+                Task chatSendTask = Task.CompletedTask;
+                if (TwitchResponseToChatCheckBox.Checked && TwitchResponseSendImmediatelyCheckBox.Checked)
+                {
+                    _bBBlog.Info("Posting channel point response to chat immediately (hearing accessibility mode)");
+                    chatSendTask = PostResponseToChatAsync(_gPTOutputText);
+                }
+
                 await SayText(_gPTOutputText, 0, GetSelectedPersona(UserSettingsManager.Settings.TwitchChannelPointPersona));
                 _bBBlog.Info("LLM response said");
                 //do we need to post the response in chat?
-                if (TwitchResponseToChatCheckBox.Checked)
+                if (TwitchResponseToChatCheckBox.Checked && !TwitchResponseSendImmediatelyCheckBox.Checked)
                 {
                     //first lets wait the delay set in the textbox
                     await Task.Delay(ParseIntOrDefault(TwitchResponseToChatDelayTextBox.Text, 1) * 1000);
                     //then post the response
-                    await _twitchEventSub.SendMessage(_gPTOutputText);
+                    await PostResponseToChatAsync(_gPTOutputText);
                 }
+                await chatSendTask;
             });
         }
 
@@ -2787,16 +2943,24 @@ namespace BanterBrain_Buddy
                 //ok we waited, lets say the response, but we need a small delay to not sound unnatural   
                 if (hasMessage && !string.IsNullOrWhiteSpace(_gPTOutputText))
                 {
+                    Task chatSendTask = Task.CompletedTask;
+                    if (TwitchResponseToChatCheckBox.Checked && TwitchResponseSendImmediatelyCheckBox.Checked)
+                    {
+                        _bBBlog.Info("Posting subscription response to chat immediately (hearing accessibility mode)");
+                        chatSendTask = PostResponseToChatAsync(_gPTOutputText);
+                    }
+
                     await SayText(_gPTOutputText, 0, GetSelectedPersona(UserSettingsManager.Settings.TwitchSubscriptionPersona));
                     _bBBlog.Info("LLM response said");
                     //do we need to post the response in chat?
-                    if (TwitchResponseToChatCheckBox.Checked)
+                    if (TwitchResponseToChatCheckBox.Checked && !TwitchResponseSendImmediatelyCheckBox.Checked)
                     {
                         //first lets wait the delay set in the textbox
                         await Task.Delay(ParseIntOrDefault(TwitchResponseToChatDelayTextBox.Text, 1) * 1000);
                         //then post the response
-                        await _twitchEventSub.SendMessage(_gPTOutputText);
+                        await PostResponseToChatAsync(_gPTOutputText);
                     }
+                    await chatSendTask;
                 }
             });
         }
@@ -2918,26 +3082,26 @@ namespace BanterBrain_Buddy
                         await SayText(TwitchLLMLanguage.ChatMessageUserSaid.Replace("{user}", user).Replace("{message}", message), 0, GetSelectedPersona(UserSettingsManager.Settings.TwitchChatPersona));
                     }
 
+                    Task chatSendTask = Task.CompletedTask;
+                    if (TwitchResponseToChatCheckBox.Checked && TwitchResponseSendImmediatelyCheckBox.Checked)
+                    {
+                        _bBBlog.Info("Posting chat command response to Twitch immediately (hearing accessibility mode)");
+                        chatSendTask = PostResponseToChatAsync(_gPTOutputText);
+                    }
+
                     //say the response      
                     await SayText(_gPTOutputText, 0, GetSelectedPersona(UserSettingsManager.Settings.TwitchChatPersona));
 
                     _bBBlog.Info("LLM response said");
                     //do we need to post the response in chat?
-                    if (TwitchResponseToChatCheckBox.Checked)
+                    if (TwitchResponseToChatCheckBox.Checked && !TwitchResponseSendImmediatelyCheckBox.Checked)
                     {
                         //first lets wait the delay set in the textbox
                         await Task.Delay(ParseIntOrDefault(TwitchResponseToChatDelayTextBox.Text, 1) * 1000);
                         //then post the response
-                        bool sent = await _twitchEventSub.SendMessage(_gPTOutputText);
-                        if (sent)
-                        {
-                            UpdateTextLog("Response posted to Twitch chat.\r\n");
-                        }
-                        else
-                        {
-                            UpdateTextLog("Failed to post response to Twitch chat. Check logs for details.\r\n");
-                        }
+                        await PostResponseToChatAsync(_gPTOutputText);
                     }
+                    await chatSendTask;
                 }
                 catch (Exception ex)
                 {
@@ -3448,6 +3612,7 @@ namespace BanterBrain_Buddy
                 TwitchSoundsSettings.Enabled = false;
                 TwitchResponseSettings.Enabled = false;
             }
+            UpdateTwitchResponseChatControlsState();
         }
 
         [SupportedOSPlatform("windows10.0.10240")]
@@ -3592,17 +3757,55 @@ namespace BanterBrain_Buddy
         [SupportedOSPlatform("windows10.0.10240")]
         private void TwitchResponseToChatCheckBox_CheckedChanged(object sender, EventArgs e)
         {
-            if (TwitchResponseToChatCheckBox.Checked)
+            UserSettingsManager.Settings.TwitchResponseToChatCheckBox = TwitchResponseToChatCheckBox.Checked;
+            UserSettingsManager.SaveSettings();
+            UpdateTwitchResponseChatControlsState();
+        }
+
+        [SupportedOSPlatform("windows10.0.10240")]
+        private void TwitchResponseSendImmediatelyCheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            UserSettingsManager.Settings.TwitchResponseSendImmediatelyCheckBox = TwitchResponseSendImmediatelyCheckBox.Checked;
+            UserSettingsManager.SaveSettings();
+            UpdateTwitchResponseChatControlsState();
+        }
+
+        [SupportedOSPlatform("windows10.0.10240")]
+        private void UpdateTwitchResponseChatControlsState()
+        {
+            bool chatEnabled = TwitchResponseToChatCheckBox.Checked && TwitchResponseSettings.Enabled;
+            TwitchResponseSendImmediatelyCheckBox.Enabled = chatEnabled;
+            bool immediate = TwitchResponseSendImmediatelyCheckBox.Checked;
+            TwitchResponseToChatDelayTextBox.Enabled = chatEnabled && !immediate;
+            TwitchPostResponseToChatDelayLabel.Enabled = chatEnabled && !immediate;
+        }
+
+        [SupportedOSPlatform("windows10.0.10240")]
+        private async Task<bool> PostResponseToChatAsync(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text) || _twitchEventSub == null)
             {
-                TwitchResponseToChatDelayTextBox.Enabled = true;
-                UserSettingsManager.Settings.TwitchResponseToChatCheckBox = true;
-                UserSettingsManager.SaveSettings();
+                return false;
             }
-            else
+
+            try
             {
-                TwitchResponseToChatDelayTextBox.Enabled = false;
-                UserSettingsManager.Settings.TwitchResponseToChatCheckBox = false;
-                UserSettingsManager.SaveSettings();
+                bool sent = await _twitchEventSub.SendMessage(text);
+                if (sent)
+                {
+                    UpdateTextLog("Response posted to Twitch chat.\r\n");
+                }
+                else
+                {
+                    UpdateTextLog("Failed to post response to Twitch chat. Check logs for details.\r\n");
+                }
+                return sent;
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("Error posting response to Twitch chat: " + ex.Message);
+                UpdateTextLog("Error posting response to Twitch chat: " + ex.Message + "\r\n");
+                return false;
             }
         }
 

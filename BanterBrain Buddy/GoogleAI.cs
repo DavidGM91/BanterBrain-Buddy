@@ -193,6 +193,13 @@ namespace BanterBrain_Buddy
                     .ThenByDescending(m => m.Equals("gemini-3.8-flash-lite-tts", StringComparison.OrdinalIgnoreCase))
                     .ThenBy(m => m)
                     .ToList();
+                foreach (string def in DefaultVoiceModels)
+                {
+                    if (!voiceModels.Contains(def, StringComparer.OrdinalIgnoreCase))
+                    {
+                        voiceModels.Add(def);
+                    }
+                }
                 if (voiceModels.Count == 0)
                 {
                     voiceModels = new List<string>(DefaultVoiceModels);
@@ -209,6 +216,59 @@ namespace BanterBrain_Buddy
             {
                 _bBBlog.Error("Google voice model list fetch failed: " + ex.Message);
                 return new List<string>(DefaultVoiceModels);
+            }
+        }
+
+        public static readonly string[] DefaultSTTModels =
+        {
+            "gemini-3.5-transcribe",
+            "gemini-2.5-flash",
+            "gemini-2.0-flash"
+        };
+        private const string defaultSTTModel = "gemini-3.5-transcribe";
+
+        public static async Task<List<string>> FetchSTTModelNamesAsync(string apiKey)
+        {
+            List<string> sttModels = new();
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                return new List<string>(DefaultSTTModels);
+            }
+            try
+            {
+                OpenAIClient client = CreateGoogleClient(apiKey);
+                ClientResult<OpenAIModelCollection> modelsResult = await client.GetOpenAIModelClient().GetModelsAsync();
+                foreach (OpenAIModel model in modelsResult.Value)
+                {
+                    string id = model.Id;
+                    if (string.IsNullOrEmpty(id))
+                    {
+                        continue;
+                    }
+                    if (id.StartsWith("models/"))
+                    {
+                        id = id.Substring(7);
+                    }
+                    if (id.Contains("transcribe", StringComparison.OrdinalIgnoreCase))
+                    {
+                        sttModels.Add(id);
+                    }
+                }
+                foreach (string def in DefaultSTTModels)
+                {
+                    if (!sttModels.Contains(def, StringComparer.OrdinalIgnoreCase))
+                    {
+                        sttModels.Add(def);
+                    }
+                }
+                sttModels.Sort();
+                _bBBlog.Info($"Fetched {sttModels.Count} STT models from Google");
+                return sttModels;
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("Google STT model list fetch failed: " + ex.Message);
+                return new List<string>(DefaultSTTModels);
             }
         }
 
@@ -910,6 +970,147 @@ namespace BanterBrain_Buddy
                 _bBBlog.Error("Google AI TTS playback failed: " + ex.Message);
                 return false;
             }
+        }
+
+        public async Task<string> GoogleSTT(string audioFile)
+        {
+            if (string.IsNullOrEmpty(audioFile) || !File.Exists(audioFile))
+            {
+                _bBBlog.Error($"Google STT audio file not found or empty: {audioFile}");
+                return null;
+            }
+
+            string apiKey = UserSettingsManager.Settings.GoogleAPIKey;
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                apiKey = GoogleAPIKey;
+            }
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                LastResponseError = "No Google AI API key configured";
+                _bBBlog.Error("Google AI STT failed: " + LastResponseError);
+                return null;
+            }
+
+            string languageSetting = !string.IsNullOrEmpty(UserSettingsManager.Settings.GoogleSTTLanguage)
+                ? UserSettingsManager.Settings.GoogleSTTLanguage
+                : UserSettingsManager.Settings.WhisperSpeechRecognitionComboBox;
+
+            _bBBlog.Info("Sending to Google AI STT with language: " + languageSetting);
+
+            string promptText;
+            if (!string.IsNullOrEmpty(languageSetting) && !languageSetting.Equals("English", StringComparison.OrdinalIgnoreCase))
+            {
+                promptText = $"Transcribe the following speech audio verbatim in {languageSetting}. Return only the exact transcribed speech text without explanations, intro, timestamps, or formatting.";
+            }
+            else
+            {
+                promptText = "Transcribe the following speech audio verbatim. Return only the exact transcribed speech text without explanations, intro, timestamps, or formatting.";
+            }
+
+            byte[] audioBytes;
+            try
+            {
+                audioBytes = await File.ReadAllBytesAsync(audioFile);
+            }
+            catch (Exception ex)
+            {
+                _bBBlog.Error("Google STT failed reading audio file: " + ex.Message);
+                return null;
+            }
+
+            string base64Audio = Convert.ToBase64String(audioBytes);
+
+            var requestBody = new
+            {
+                contents = new[]
+                {
+                    new
+                    {
+                        parts = new object[]
+                        {
+                            new { text = promptText },
+                            new
+                            {
+                                inlineData = new
+                                {
+                                    mimeType = "audio/wav",
+                                    data = base64Audio
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            string jsonPayload = JsonConvert.SerializeObject(requestBody);
+
+            string selectedSTTModel = !string.IsNullOrWhiteSpace(UserSettingsManager.Settings.GoogleSTTModel)
+                ? UserSettingsManager.Settings.GoogleSTTModel
+                : defaultSTTModel;
+
+            List<string> candidateModels = new() { selectedSTTModel };
+            foreach (string fallback in DefaultSTTModels)
+            {
+                if (!candidateModels.Contains(fallback, StringComparer.OrdinalIgnoreCase))
+                {
+                    candidateModels.Add(fallback);
+                }
+            }
+
+            using var httpClient = new HttpClient();
+            httpClient.Timeout = TimeSpan.FromSeconds(30);
+
+            string lastError = "";
+            foreach (string model in candidateModels)
+            {
+                try
+                {
+                    string url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
+                    using var request = new HttpRequestMessage(HttpMethod.Post, url)
+                    {
+                        Content = new StringContent(jsonPayload, Encoding.UTF8, "application/json")
+                    };
+
+                    HttpResponseMessage response = await httpClient.SendAsync(request);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        string errorBody = await response.Content.ReadAsStringAsync();
+                        try
+                        {
+                            JObject errJson = JObject.Parse(errorBody);
+                            string msg = (string)errJson["error"]?["message"];
+                            if (!string.IsNullOrEmpty(msg))
+                            {
+                                errorBody = msg;
+                            }
+                        }
+                        catch { }
+                        lastError = $"HTTP {(int)response.StatusCode}: {errorBody}";
+                        _bBBlog.Warn($"Google AI STT attempt on {model} returned {lastError}");
+                        continue;
+                    }
+
+                    string responseJson = await response.Content.ReadAsStringAsync();
+                    JObject jObj = JObject.Parse(responseJson);
+                    string transcript = jObj["candidates"]?[0]?["content"]?["parts"]?[0]?["text"]?.ToString();
+                    if (!string.IsNullOrWhiteSpace(transcript))
+                    {
+                        transcript = transcript.Trim();
+                        _bBBlog.Info($"Google AI STT received transcript from {model}: {transcript}");
+                        return transcript;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex.Message;
+                    _bBBlog.Error($"Google AI STT request failed for {model}: " + ex.Message);
+                }
+            }
+
+            LastResponseError = !string.IsNullOrEmpty(lastError) ? lastError : "No transcript received from any Gemini STT model";
+            _bBBlog.Error("Google AI STT failed: " + LastResponseError);
+            return null;
         }
 
         public GoogleAI()

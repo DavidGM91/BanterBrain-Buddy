@@ -92,6 +92,10 @@ namespace BanterBrain_Buddy
         public string GroqVoiceModel { get; set; }
         //last voice model list fetched from Groq
         public List<string> GroqVoiceModelListCache { get; set; }
+        public string GroqWhisperModel { get; set; }
+        //last whisper model list fetched from Groq
+        public List<string> GroqWhisperModelListCache { get; set; }
+        public string GroqWhisperLanguage { get; set; }
         //Google AI (Gemini OpenAI compatible chat API)
         public string GoogleAPIKey { get; set; }
         public string GoogleModel { get; set; }
@@ -104,6 +108,10 @@ namespace BanterBrain_Buddy
         public List<string> GoogleModelListCache { get; set; }
         //last voice model list fetched from Google
         public List<string> GoogleVoiceModelListCache { get; set; }
+        public string GoogleSTTModel { get; set; }
+        //last STT model list fetched from Google
+        public List<string> GoogleSTTModelListCache { get; set; }
+        public string GoogleSTTLanguage { get; set; }
         //reasoning effort levels per Google model, an empty list caches "no reasoning settings"
         public Dictionary<string, List<string>> GoogleReasoningLevelsCache { get; set; }
         public string TwitchChatSound { get; set; }
@@ -116,6 +124,7 @@ namespace BanterBrain_Buddy
         public string TwitchSubscriptionSoundTextBox { get; set; }
         public string TwitchResponseToChatDelayTextBox { get; set; }
         public bool TwitchResponseToChatCheckBox { get; set; }
+        public bool TwitchResponseSendImmediatelyCheckBox { get; set; }
         public bool TwitchSubscriptionTTSResponseOnlyRadioButton { get; set; }
         public bool TwitchCheeringTTSResponseOnlyRadioButton { get; set; }
         public bool TwitchChannelPointTTSResponseOnlyRadioButton { get; set; }
@@ -237,6 +246,7 @@ namespace BanterBrain_Buddy
                 settings.TwitchChatCommandDelay = 300;
                 settings.TwitchMinBits = 100;
                 settings.TwitchResponseToChatDelayTextBox = "1";
+                settings.TwitchResponseSendImmediatelyCheckBox = false;
                 settings.TwitchSubscriptionTTSResponseOnlyRadioButton = true;
                 settings.TwitchCheeringTTSResponseOnlyRadioButton = true;
                 settings.TwitchChannelPointTTSResponseOnlyRadioButton = true;
@@ -277,6 +287,9 @@ namespace BanterBrain_Buddy
                 settings.GroqReasoningEffortComboBox = "";
                 settings.GroqModelListCache = new List<string>();
                 settings.GroqVoiceModelListCache = new List<string>();
+                settings.GroqWhisperModel = "whisper-large-v3";
+                settings.GroqWhisperModelListCache = new List<string>();
+                settings.GroqWhisperLanguage = "English";
                 settings.GroqReasoningLevelsCache = new Dictionary<string, List<string>>();
 
                 //Google AI / Gemini
@@ -287,6 +300,9 @@ namespace BanterBrain_Buddy
                 settings.GoogleReasoningEffortComboBox = "";
                 settings.GoogleModelListCache = new List<string>();
                 settings.GoogleVoiceModelListCache = new List<string>();
+                settings.GoogleSTTModel = "gemini-3.5-transcribe";
+                settings.GoogleSTTModelListCache = new List<string>();
+                settings.GoogleSTTLanguage = "English";
                 settings.GoogleReasoningLevelsCache = new Dictionary<string, List<string>>();
 
                 //Webserversource

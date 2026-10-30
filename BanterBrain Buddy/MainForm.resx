@@ -881,16 +881,16 @@
     <value>1</value>
   </data>
   <data name="TwitchResponseToChatDelayTextBox.Location" type="System.Drawing.Point, System.Drawing">
-    <value>195, 14</value>
+    <value>225, 15</value>
   </data>
   <data name="TwitchResponseToChatDelayTextBox.Margin" type="System.Windows.Forms.Padding, System.Windows.Forms">
     <value>4, 3, 4, 3</value>
   </data>
   <data name="TwitchResponseToChatDelayTextBox.Size" type="System.Drawing.Size, System.Drawing">
-    <value>72, 23</value>
+    <value>48, 23</value>
   </data>
   <data name="TwitchResponseToChatDelayTextBox.TabIndex" type="System.Int32, mscorlib">
-    <value>21</value>
+    <value>3</value>
   </data>
   <data name="TwitchResponseToChatDelayTextBox.ToolTip" xml:space="preserve">
     <value>Seconds delay between finish speaking and printing in twitch chat</value>
@@ -914,19 +914,19 @@
     <value>NoControl</value>
   </data>
   <data name="TwitchPostResponseToChatDelayLabel.Location" type="System.Drawing.Point, System.Drawing">
-    <value>97, 19</value>
+    <value>167, 19</value>
   </data>
   <data name="TwitchPostResponseToChatDelayLabel.Margin" type="System.Windows.Forms.Padding, System.Windows.Forms">
     <value>4, 0, 4, 0</value>
   </data>
   <data name="TwitchPostResponseToChatDelayLabel.Size" type="System.Drawing.Size, System.Drawing">
-    <value>90, 15</value>
+    <value>55, 15</value>
   </data>
   <data name="TwitchPostResponseToChatDelayLabel.TabIndex" type="System.Int32, mscorlib">
-    <value>21</value>
+    <value>2</value>
   </data>
   <data name="TwitchPostResponseToChatDelayLabel.Text" xml:space="preserve">
-    <value>Delay (seconds)</value>
+    <value>Delay (s)</value>
   </data>
   <data name="&gt;&gt;TwitchPostResponseToChatDelayLabel.Name" xml:space="preserve">
     <value>TwitchPostResponseToChatDelayLabel</value>
@@ -940,14 +940,44 @@
   <data name="&gt;&gt;TwitchPostResponseToChatDelayLabel.ZOrder" xml:space="preserve">
     <value>1</value>
   </data>
+  <data name="TwitchResponseSendImmediatelyCheckBox.AutoSize" type="System.Boolean, mscorlib">
+    <value>True</value>
+  </data>
+  <data name="TwitchResponseSendImmediatelyCheckBox.Location" type="System.Drawing.Point, System.Drawing">
+    <value>66, 18</value>
+  </data>
+  <data name="TwitchResponseSendImmediatelyCheckBox.Size" type="System.Drawing.Size, System.Drawing">
+    <value>98, 19</value>
+  </data>
+  <data name="TwitchResponseSendImmediatelyCheckBox.TabIndex" type="System.Int32, mscorlib">
+    <value>1</value>
+  </data>
+  <data name="TwitchResponseSendImmediatelyCheckBox.Text" xml:space="preserve">
+    <value>Immediately</value>
+  </data>
+  <data name="TwitchResponseSendImmediatelyCheckBox.ToolTip" xml:space="preserve">
+    <value>Send text to chat immediately when response is received instead of waiting for TTS to finish speaking</value>
+  </data>
+  <data name="&gt;&gt;TwitchResponseSendImmediatelyCheckBox.Name" xml:space="preserve">
+    <value>TwitchResponseSendImmediatelyCheckBox</value>
+  </data>
+  <data name="&gt;&gt;TwitchResponseSendImmediatelyCheckBox.Type" xml:space="preserve">
+    <value>System.Windows.Forms.CheckBox, System.Windows.Forms, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </data>
+  <data name="&gt;&gt;TwitchResponseSendImmediatelyCheckBox.Parent" xml:space="preserve">
+    <value>TwitchResponseSettings</value>
+  </data>
+  <data name="&gt;&gt;TwitchResponseSendImmediatelyCheckBox.ZOrder" xml:space="preserve">
+    <value>2</value>
+  </data>
   <data name="TwitchResponseToChatCheckBox.AutoSize" type="System.Boolean, mscorlib">
     <value>True</value>
   </data>
   <data name="TwitchResponseToChatCheckBox.Location" type="System.Drawing.Point, System.Drawing">
-    <value>7, 18</value>
+    <value>6, 18</value>
   </data>
   <data name="TwitchResponseToChatCheckBox.Size" type="System.Drawing.Size, System.Drawing">
-    <value>61, 19</value>
+    <value>58, 19</value>
   </data>
   <data name="TwitchResponseToChatCheckBox.TabIndex" type="System.Int32, mscorlib">
     <value>0</value>
@@ -965,7 +995,7 @@
     <value>TwitchResponseSettings</value>
   </data>
   <data name="&gt;&gt;TwitchResponseToChatCheckBox.ZOrder" xml:space="preserve">
-    <value>2</value>
+    <value>3</value>
   </data>
   <data name="TwitchResponseSettings.Location" type="System.Drawing.Point, System.Drawing">
     <value>12, 394</value>

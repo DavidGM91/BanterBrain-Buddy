@@ -198,6 +198,11 @@ namespace BanterBrain_Buddy
             GroqVoiceModelLabel = new System.Windows.Forms.Label();
             GroqVoiceModelComboBox = new System.Windows.Forms.ComboBox();
             GroqLoadVoiceModelsButton = new System.Windows.Forms.Button();
+            GroqWhisperModelLabel = new System.Windows.Forms.Label();
+            GroqWhisperModelComboBox = new System.Windows.Forms.ComboBox();
+            GroqLoadWhisperModelsButton = new System.Windows.Forms.Button();
+            GroqWhisperLanguageLabel = new System.Windows.Forms.Label();
+            GroqWhisperLanguageComboBox = new System.Windows.Forms.ComboBox();
             GroqTestSettingsButton = new System.Windows.Forms.Button();
             GooglePanel = new System.Windows.Forms.Panel();
             GoogleMaxTokensTextBox = new System.Windows.Forms.TextBox();
@@ -217,6 +222,11 @@ namespace BanterBrain_Buddy
             GoogleVoiceModelLabel = new System.Windows.Forms.Label();
             GoogleVoiceModelComboBox = new System.Windows.Forms.ComboBox();
             GoogleLoadVoiceModelsButton = new System.Windows.Forms.Button();
+            GoogleSTTModelLabel = new System.Windows.Forms.Label();
+            GoogleSTTModelComboBox = new System.Windows.Forms.ComboBox();
+            GoogleLoadSTTModelsButton = new System.Windows.Forms.Button();
+            GoogleSTTLanguageLabel = new System.Windows.Forms.Label();
+            GoogleSTTLanguageComboBox = new System.Windows.Forms.ComboBox();
             GoogleTestSettingsButton = new System.Windows.Forms.Button();
             BBBToolTip = new System.Windows.Forms.ToolTip(components);
             ((System.ComponentModel.ISupportInitialize)splitContainer1).BeginInit();
@@ -1800,6 +1810,11 @@ namespace BanterBrain_Buddy
             GroqPanel.Controls.Add(GroqVoiceModelComboBox);
             GroqPanel.Controls.Add(GroqVoiceModelLabel);
             GroqPanel.Controls.Add(GroqLoadVoiceModelsButton);
+            GroqPanel.Controls.Add(GroqWhisperLanguageComboBox);
+            GroqPanel.Controls.Add(GroqWhisperLanguageLabel);
+            GroqPanel.Controls.Add(GroqLoadWhisperModelsButton);
+            GroqPanel.Controls.Add(GroqWhisperModelComboBox);
+            GroqPanel.Controls.Add(GroqWhisperModelLabel);
             GroqPanel.Controls.Add(GroqReasoningComboBox);
             GroqPanel.Controls.Add(GroqReasoningLoadButton);
             GroqPanel.Controls.Add(GroqReasoningLabel);
@@ -2012,6 +2027,65 @@ namespace BanterBrain_Buddy
             GroqLoadVoiceModelsButton.Click += GroqLoadVoiceModelsButton_Click;
             BBBToolTip.SetToolTip(GroqLoadVoiceModelsButton, "Pulls the TTS model list for your Groq key into the selector.");
             // 
+            // GroqWhisperModelLabel
+            // 
+            GroqWhisperModelLabel.AutoSize = true;
+            GroqWhisperModelLabel.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GroqWhisperModelLabel.Location = new System.Drawing.Point(37, 249);
+            GroqWhisperModelLabel.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            GroqWhisperModelLabel.Name = "GroqWhisperModelLabel";
+            GroqWhisperModelLabel.Size = new System.Drawing.Size(89, 15);
+            GroqWhisperModelLabel.TabIndex = 48;
+            GroqWhisperModelLabel.Text = "Whisper Model";
+            // 
+            // GroqWhisperModelComboBox
+            // 
+            GroqWhisperModelComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            GroqWhisperModelComboBox.FormattingEnabled = true;
+            GroqWhisperModelComboBox.Items.AddRange(new object[] { "whisper-large-v3", "whisper-large-v3-turbo" });
+            GroqWhisperModelComboBox.Location = new System.Drawing.Point(183, 246);
+            GroqWhisperModelComboBox.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GroqWhisperModelComboBox.Name = "GroqWhisperModelComboBox";
+            GroqWhisperModelComboBox.Size = new System.Drawing.Size(224, 23);
+            GroqWhisperModelComboBox.TabIndex = 49;
+            BBBToolTip.SetToolTip(GroqWhisperModelComboBox, "Selects the Groq Whisper model used for speech-to-text audio transcription.");
+            // 
+            // GroqLoadWhisperModelsButton
+            // 
+            GroqLoadWhisperModelsButton.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GroqLoadWhisperModelsButton.Location = new System.Drawing.Point(437, 244);
+            GroqLoadWhisperModelsButton.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GroqLoadWhisperModelsButton.Name = "GroqLoadWhisperModelsButton";
+            GroqLoadWhisperModelsButton.Size = new System.Drawing.Size(135, 27);
+            GroqLoadWhisperModelsButton.TabIndex = 50;
+            GroqLoadWhisperModelsButton.Text = "Load whisper models";
+            GroqLoadWhisperModelsButton.UseVisualStyleBackColor = true;
+            GroqLoadWhisperModelsButton.Click += GroqLoadWhisperModelsButton_Click;
+            BBBToolTip.SetToolTip(GroqLoadWhisperModelsButton, "Pulls the Whisper model list for your Groq key into the selector.");
+            // 
+            // GroqWhisperLanguageLabel
+            // 
+            GroqWhisperLanguageLabel.AutoSize = true;
+            GroqWhisperLanguageLabel.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GroqWhisperLanguageLabel.Location = new System.Drawing.Point(37, 287);
+            GroqWhisperLanguageLabel.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            GroqWhisperLanguageLabel.Name = "GroqWhisperLanguageLabel";
+            GroqWhisperLanguageLabel.Size = new System.Drawing.Size(161, 15);
+            GroqWhisperLanguageLabel.TabIndex = 51;
+            GroqWhisperLanguageLabel.Text = "Speech recognition language";
+            // 
+            // GroqWhisperLanguageComboBox
+            // 
+            GroqWhisperLanguageComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            GroqWhisperLanguageComboBox.FormattingEnabled = true;
+            GroqWhisperLanguageComboBox.Items.AddRange(new object[] { "Dutch", "Danish", "English", "French", "German", "Italian", "Japanese", "Norwegian", "Polish", "Spanish", "Swedish" });
+            GroqWhisperLanguageComboBox.Location = new System.Drawing.Point(183, 284);
+            GroqWhisperLanguageComboBox.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GroqWhisperLanguageComboBox.Name = "GroqWhisperLanguageComboBox";
+            GroqWhisperLanguageComboBox.Size = new System.Drawing.Size(224, 23);
+            GroqWhisperLanguageComboBox.TabIndex = 52;
+            BBBToolTip.SetToolTip(GroqWhisperLanguageComboBox, "Selects the language spoken for Groq Whisper speech recognition.");
+            // 
             // GroqTestSettingsButton
             // 
             GroqTestSettingsButton.ImeMode = System.Windows.Forms.ImeMode.NoControl;
@@ -2030,6 +2104,11 @@ namespace BanterBrain_Buddy
             GooglePanel.Controls.Add(GoogleVoiceModelComboBox);
             GooglePanel.Controls.Add(GoogleVoiceModelLabel);
             GooglePanel.Controls.Add(GoogleLoadVoiceModelsButton);
+            GooglePanel.Controls.Add(GoogleSTTLanguageComboBox);
+            GooglePanel.Controls.Add(GoogleSTTLanguageLabel);
+            GooglePanel.Controls.Add(GoogleLoadSTTModelsButton);
+            GooglePanel.Controls.Add(GoogleSTTModelComboBox);
+            GooglePanel.Controls.Add(GoogleSTTModelLabel);
             GooglePanel.Controls.Add(GoogleReasoningComboBox);
             GooglePanel.Controls.Add(GoogleReasoningLoadButton);
             GooglePanel.Controls.Add(GoogleReasoningLabel);
@@ -2242,6 +2321,65 @@ namespace BanterBrain_Buddy
             GoogleLoadVoiceModelsButton.Click += GoogleLoadVoiceModelsButton_Click;
             BBBToolTip.SetToolTip(GoogleLoadVoiceModelsButton, "Pulls the TTS model list for your Google AI key into the selector.");
             // 
+            // GoogleSTTModelLabel
+            // 
+            GoogleSTTModelLabel.AutoSize = true;
+            GoogleSTTModelLabel.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GoogleSTTModelLabel.Location = new System.Drawing.Point(37, 249);
+            GoogleSTTModelLabel.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            GoogleSTTModelLabel.Name = "GoogleSTTModelLabel";
+            GoogleSTTModelLabel.Size = new System.Drawing.Size(89, 15);
+            GoogleSTTModelLabel.TabIndex = 48;
+            GoogleSTTModelLabel.Text = "STT Model";
+            // 
+            // GoogleSTTModelComboBox
+            // 
+            GoogleSTTModelComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            GoogleSTTModelComboBox.FormattingEnabled = true;
+            GoogleSTTModelComboBox.Items.AddRange(new object[] { "gemini-3.5-transcribe", "gemini-2.5-flash", "gemini-2.0-flash" });
+            GoogleSTTModelComboBox.Location = new System.Drawing.Point(183, 246);
+            GoogleSTTModelComboBox.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GoogleSTTModelComboBox.Name = "GoogleSTTModelComboBox";
+            GoogleSTTModelComboBox.Size = new System.Drawing.Size(224, 23);
+            GoogleSTTModelComboBox.TabIndex = 49;
+            BBBToolTip.SetToolTip(GoogleSTTModelComboBox, "Selects the Gemini model used for speech-to-text audio transcription.");
+            // 
+            // GoogleLoadSTTModelsButton
+            // 
+            GoogleLoadSTTModelsButton.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GoogleLoadSTTModelsButton.Location = new System.Drawing.Point(437, 244);
+            GoogleLoadSTTModelsButton.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GoogleLoadSTTModelsButton.Name = "GoogleLoadSTTModelsButton";
+            GoogleLoadSTTModelsButton.Size = new System.Drawing.Size(135, 27);
+            GoogleLoadSTTModelsButton.TabIndex = 50;
+            GoogleLoadSTTModelsButton.Text = "Load STT models";
+            GoogleLoadSTTModelsButton.UseVisualStyleBackColor = true;
+            GoogleLoadSTTModelsButton.Click += GoogleLoadSTTModelsButton_Click;
+            BBBToolTip.SetToolTip(GoogleLoadSTTModelsButton, "Pulls the STT model list for your Google AI key into the selector.");
+            // 
+            // GoogleSTTLanguageLabel
+            // 
+            GoogleSTTLanguageLabel.AutoSize = true;
+            GoogleSTTLanguageLabel.ImeMode = System.Windows.Forms.ImeMode.NoControl;
+            GoogleSTTLanguageLabel.Location = new System.Drawing.Point(37, 287);
+            GoogleSTTLanguageLabel.Margin = new System.Windows.Forms.Padding(4, 0, 4, 0);
+            GoogleSTTLanguageLabel.Name = "GoogleSTTLanguageLabel";
+            GoogleSTTLanguageLabel.Size = new System.Drawing.Size(161, 15);
+            GoogleSTTLanguageLabel.TabIndex = 51;
+            GoogleSTTLanguageLabel.Text = "Speech recognition language";
+            // 
+            // GoogleSTTLanguageComboBox
+            // 
+            GoogleSTTLanguageComboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            GoogleSTTLanguageComboBox.FormattingEnabled = true;
+            GoogleSTTLanguageComboBox.Items.AddRange(new object[] { "Dutch", "Danish", "English", "French", "German", "Italian", "Japanese", "Norwegian", "Polish", "Spanish", "Swedish" });
+            GoogleSTTLanguageComboBox.Location = new System.Drawing.Point(183, 284);
+            GoogleSTTLanguageComboBox.Margin = new System.Windows.Forms.Padding(4, 3, 4, 3);
+            GoogleSTTLanguageComboBox.Name = "GoogleSTTLanguageComboBox";
+            GoogleSTTLanguageComboBox.Size = new System.Drawing.Size(224, 23);
+            GoogleSTTLanguageComboBox.TabIndex = 52;
+            BBBToolTip.SetToolTip(GoogleSTTLanguageComboBox, "Selects the language spoken for Google Gemini speech recognition.");
+            // 
             // GoogleTestSettingsButton
             // 
             GoogleTestSettingsButton.ImeMode = System.Windows.Forms.ImeMode.NoControl;
@@ -2416,6 +2554,11 @@ namespace BanterBrain_Buddy
         private System.Windows.Forms.Label GroqVoiceModelLabel;
         private System.Windows.Forms.ComboBox GroqVoiceModelComboBox;
         private System.Windows.Forms.Button GroqLoadVoiceModelsButton;
+        private System.Windows.Forms.Label GroqWhisperModelLabel;
+        private System.Windows.Forms.ComboBox GroqWhisperModelComboBox;
+        private System.Windows.Forms.Button GroqLoadWhisperModelsButton;
+        private System.Windows.Forms.Label GroqWhisperLanguageLabel;
+        private System.Windows.Forms.ComboBox GroqWhisperLanguageComboBox;
         private System.Windows.Forms.Button GroqTestSettingsButton;
         private System.Windows.Forms.Panel GooglePanel;
         private System.Windows.Forms.Label label36;
@@ -2435,6 +2578,11 @@ namespace BanterBrain_Buddy
         private System.Windows.Forms.Label GoogleVoiceModelLabel;
         private System.Windows.Forms.ComboBox GoogleVoiceModelComboBox;
         private System.Windows.Forms.Button GoogleLoadVoiceModelsButton;
+        private System.Windows.Forms.Label GoogleSTTModelLabel;
+        private System.Windows.Forms.ComboBox GoogleSTTModelComboBox;
+        private System.Windows.Forms.Button GoogleLoadSTTModelsButton;
+        private System.Windows.Forms.Label GoogleSTTLanguageLabel;
+        private System.Windows.Forms.ComboBox GoogleSTTLanguageComboBox;
         private System.Windows.Forms.Button GoogleTestSettingsButton;
         private System.Windows.Forms.Panel NativeSpeechPanel;
         private System.Windows.Forms.Label label22;
